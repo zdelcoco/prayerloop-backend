@@ -19,6 +19,4 @@ func main() {
 
 	router.Run()
 
-	/* comment added ci/cd testing */
-
 }
