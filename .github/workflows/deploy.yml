@@ -43,8 +43,8 @@ jobs:
           ssh -o StrictHostKeyChecking=no -i ec2_key.pem ec2-user@${{ secrets.EC2_PUBLIC_IP }} "
 
           # Stop the currently running container if it exists
-          if [ \$(docker ps -q --filter ancestor=${{ secrets.DOCKER_USERNAME }}/myapp) ]; then 
-            docker stop \$(docker ps -q --filter ancestor=${{ secrets.DOCKER_USERNAME }}/myapp); 
+          if [ \$(docker ps --filter \"status=running\" | grep -i ${{ secrets.DOCKER_USERNAME }}/myapp) ]; then 
+            docker stop \$(docker ps --filter \"status=running\" | grep -i ${{ secrets.DOCKER_USERNAME }}/myapp | cut -d\" \" -f1); 
           fi && 
 
           docker pull ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} && 
