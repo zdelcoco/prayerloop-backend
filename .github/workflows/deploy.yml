@@ -15,7 +15,7 @@ jobs:
 
       - name: Create .env file from secret
         run: |
-          cat "${{ secrets.ENV_FILE }}" | base64 --decode > .env
+          echo "${{ secrets.ENV_FILE }}" > .env
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
