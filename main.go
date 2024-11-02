@@ -9,6 +9,7 @@ import (
 
 func init() {
 	initializers.LoadEnv()
+	initializers.ConnectDB()
 }
 
 func main() {
@@ -16,6 +17,7 @@ func main() {
 	router := gin.Default()
 
 	router.GET("/ping", controllers.Ping)
+	router.POST("/user/signup", controllers.UserSignup)
 
 	router.Run()
 
