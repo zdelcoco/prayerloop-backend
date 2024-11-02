@@ -18,6 +18,13 @@ import (
 )
 
 func UserSignup(c *gin.Context) {
+	admin := c.MustGet("admin")
+
+	if admin != true {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "must be logged in as an admin to create a user."})
+		return
+	}
+
 	var user models.UserSignup
 
 	if err := c.ShouldBindJSON(&user); err != nil {

@@ -20,7 +20,7 @@ func main() {
 	router.GET("/ping", controllers.Ping)
 
 	router.GET("/user/profile", middlewares.CheckAuth, controllers.GetUserProfile)
-	router.POST("/user/signup", controllers.UserSignup)
+	router.POST("/user/signup", middlewares.CheckAuth, controllers.UserSignup)
 	router.POST("/user/login", controllers.UserLogin)
 
 	router.Run()
