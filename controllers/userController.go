@@ -4,7 +4,12 @@ import (
 	"log"
 	"net/http"
 
+	"os"
+	"strings"
+	"time"
+
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v4"
 
 	"github.com/PrayerLoop/initializers"
 	"github.com/PrayerLoop/models"
@@ -59,4 +64,61 @@ func UserSignup(c *gin.Context) {
 		})
 	}
 
+}
+
+func UserLogin(c *gin.Context) {
+	var user models.Login
+
+	if err := c.ShouldBindJSON(&user); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var dbUser models.User
+	_, err := initializers.DB.From("user").Select("*").Where(goqu.C("username").Eq(user.Username)).ScanStruct(&dbUser)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	err = bcrypt.CompareHashAndPassword([]byte(dbUser.Password), []byte(user.Password))
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid password"})
+		return
+	}
+
+	role := ""
+	if strings.HasPrefix(dbUser.Username, "admin") {
+		role = "admin"
+	} else {
+		role = "user"
+	}
+
+	generateToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"id":   dbUser.User_ID,
+		"exp":  time.Now().Add(time.Hour * 24).Unix(),
+		"role": role,
+	})
+
+	token, err := generateToken.SignedString([]byte(os.Getenv("SECRET")))
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to generate token"})
+	}
+
+	c.JSON(200, gin.H{
+		"message": "User logged in successfully.",
+		"token":   token,
+		"user":    dbUser,
+	})
+}
+
+func GetUserProfile(c *gin.Context) {
+
+	user, _ := c.Get("currentUser")
+
+	c.JSON(200, gin.H{
+		"user":  user,
+		"admin": c.MustGet("admin"),
+	})
 }
