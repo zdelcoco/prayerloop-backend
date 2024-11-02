@@ -48,4 +48,4 @@ jobs:
           fi && 
 
           docker pull ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} && 
-          docker run -d -p ${{ vars.PORT }}:${{ vars.PORT }} ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }}"
+          docker run --env-file .env -d -p ${{ vars.PORT }}:${{ vars.PORT }} ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }}"
