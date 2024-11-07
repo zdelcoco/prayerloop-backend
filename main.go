@@ -23,6 +23,8 @@ func main() {
 	router.POST("/user/signup", middlewares.CheckAuth, controllers.UserSignup)
 	router.POST("/user/login", controllers.UserLogin)
 
+	router.GET("/user/PrayerRequests", middlewares.CheckAuth, controllers.GetPrayerRequestsForUser)
+
 	router.Run()
 
 }
