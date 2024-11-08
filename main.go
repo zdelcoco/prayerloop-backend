@@ -24,6 +24,7 @@ func main() {
 	router.POST("/user/login", controllers.UserLogin)
 
 	router.GET("/user/PrayerRequests", middlewares.CheckAuth, controllers.GetPrayerRequestsForUser)
+	router.POST("/user/PrayerRequests/create", middlewares.CheckAuth, controllers.CreatePrayerRequest)
 
 	router.Run()
 
