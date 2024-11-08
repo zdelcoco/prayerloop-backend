@@ -26,6 +26,7 @@ func main() {
 		auth.POST("/users", controllers.UserSignup)
 
 		auth.GET("/users/me", controllers.GetUserProfile)
+		auth.GET("/users/:id/groups", controllers.GetUserGroups)
 
 		// prayer-request routes
 		auth.POST("/prayer-requests", controllers.CreatePrayerRequest)
@@ -40,6 +41,9 @@ func main() {
 		auth.GET("/groups", controllers.GetAllGroups)
 		auth.PUT("/groups/:id", controllers.UpdateGroup)
 		auth.DELETE("/groups/:id", controllers.DeleteGroup)
+
+		auth.GET("/groups/:id/users", controllers.GetGroupUsers)
+		auth.POST("/groups/:group_id/users/:user_id", controllers.AddUserToGroup)
 
 	}
 

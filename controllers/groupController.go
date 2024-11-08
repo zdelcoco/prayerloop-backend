@@ -170,3 +170,115 @@ func DeleteGroup(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Group deleted successfully"})
 }
+
+func GetGroupUsers(c *gin.Context) {
+	groupID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group ID"})
+		return
+	}
+
+	query := initializers.DB.From("user_group").
+		Select(
+			"user.user_id",
+			"user.username",
+			"user.email",
+			"user.first_name",
+			"user.last_name",
+			"user_group.created_by",
+			"user_group.updated_by",
+		).
+		InnerJoin(
+			goqu.T("user"),
+			goqu.On(goqu.Ex{"user_group.user_id": goqu.I("user.user_id")}),
+		).
+		Where(
+			goqu.And(
+				goqu.C("group_id").Table("user_group").Eq(groupID),
+				goqu.C("is_active").Table("user_group").IsTrue(),
+			),
+		)
+
+	sql, args, err := query.ToSQL()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to construct query"})
+		return
+	}
+
+	var users []models.User
+	err = initializers.DB.ScanStructs(&users, sql, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch group users"})
+		return
+	}
+
+	if len(users) == 0 {
+		c.JSON(http.StatusOK, gin.H{"message": "No users found for this group"})
+		return
+	}
+
+	c.JSON(http.StatusOK, users)
+}
+
+func AddUserToGroup(c *gin.Context) {
+	currentUser := c.MustGet("currentUser").(models.User)
+	isAdmin := c.MustGet("admin").(bool)
+
+	groupID, err := strconv.Atoi(c.Param("group_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group ID"})
+		return
+	}
+
+	userID, err := strconv.Atoi(c.Param("user_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	if !isAdmin && userID != currentUser.User_ID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to add this user to the group"})
+		return
+	}
+
+	// Check if the user is already in the group
+	var existingEntry models.UserGroup
+	found, err := initializers.DB.From("user_group").
+		Where(
+			goqu.And(
+				goqu.C("user_id").Eq(userID),
+				goqu.C("group_id").Eq(groupID),
+			),
+		).ScanStruct(&existingEntry)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check existing membership"})
+		return
+	}
+
+	if found {
+		c.JSON(http.StatusConflict, gin.H{"error": "User is already a member of this group"})
+		return
+	}
+
+	newEntry := models.UserGroup{
+		User_ID:         userID,
+		Group_ID:        groupID,
+		Is_Active:       true,
+		Created_By:      currentUser.User_ID,
+		Updated_By:      currentUser.User_ID,
+		Datetime_Create: time.Now(),
+		Datetime_Update: time.Now(),
+	}
+
+	insert := initializers.DB.Insert("user_group").Rows(newEntry)
+
+	_, err = insert.Executor().Exec()
+	if err != nil {
+		log.Println(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add user to group"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "User added to group successfully"})
+}

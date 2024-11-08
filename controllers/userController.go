@@ -3,6 +3,7 @@ package controllers
 import (
 	"log"
 	"net/http"
+	"strconv"
 
 	"os"
 	"strings"
@@ -128,4 +129,63 @@ func GetUserProfile(c *gin.Context) {
 		"user":  user,
 		"admin": c.MustGet("admin"),
 	})
+}
+
+func GetUserGroups(c *gin.Context) {
+	currentUser := c.MustGet("currentUser").(models.User)
+	isAdmin := c.MustGet("admin").(bool)
+
+	userID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	if userID != currentUser.User_ID && !isAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to view this user's groups"})
+		return
+	}
+
+	query := initializers.DB.From("user_group").
+		Select(
+			"group.group_id",
+			"group.group_name",
+			"group.description",
+			"group.is_active",
+			"group.datetime_create",
+			"group.datetime_update",
+			"group.created_by",
+			"group.updated_by",
+		).
+		InnerJoin(
+			goqu.T("group"),
+			goqu.On(goqu.Ex{"user_group.group_id": goqu.I("group.group_id")}),
+		).
+		Where(
+			goqu.And(
+				goqu.C("user_id").Table("user_group").Eq(userID),
+				goqu.C("is_active").Table("user_group").IsTrue(),
+				goqu.C("is_active").Table("group").IsTrue(),
+			),
+		)
+
+	sql, args, err := query.ToSQL()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to construct query"})
+		return
+	}
+
+	var groups []models.Group
+	err = initializers.DB.ScanStructs(&groups, sql, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user groups"})
+		return
+	}
+
+	if len(groups) == 0 {
+		c.JSON(http.StatusOK, gin.H{"message": "No groups found for this user"})
+		return
+	}
+
+	c.JSON(http.StatusOK, groups)
 }
