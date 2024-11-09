@@ -37,13 +37,14 @@ func main() {
 
 		// group routes
 		auth.POST("/groups", controllers.CreateGroup)
-		auth.GET("/groups/:id", controllers.GetGroup)
+		auth.GET("/groups/:group_id", controllers.GetGroup)
 		auth.GET("/groups", controllers.GetAllGroups)
-		auth.PUT("/groups/:id", controllers.UpdateGroup)
-		auth.DELETE("/groups/:id", controllers.DeleteGroup)
+		auth.PUT("/groups/:group_id", controllers.UpdateGroup)
+		auth.DELETE("/groups/:group_id", controllers.DeleteGroup)
 
-		auth.GET("/groups/:id/users", controllers.GetGroupUsers)
+		auth.GET("/groups/:group_id/users", controllers.GetGroupUsers)
 		auth.POST("/groups/:group_id/users/:user_id", controllers.AddUserToGroup)
+		auth.DELETE("/groups/:group_id/users/:user_id", controllers.RemoveUserFromGroup)
 
 	}
 

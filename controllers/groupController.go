@@ -55,7 +55,7 @@ func CreateGroup(c *gin.Context) {
 }
 
 func GetGroup(c *gin.Context) {
-	groupID, err := strconv.Atoi(c.Param("id"))
+	groupID, err := strconv.Atoi(c.Param("group_id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group ID"})
 		return
@@ -102,7 +102,7 @@ func UpdateGroup(c *gin.Context) {
 		return
 	}
 
-	groupID, err := strconv.Atoi(c.Param("id"))
+	groupID, err := strconv.Atoi(c.Param("group_id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group ID"})
 		return
@@ -147,7 +147,7 @@ func DeleteGroup(c *gin.Context) {
 		return
 	}
 
-	groupID, err := strconv.Atoi(c.Param("id"))
+	groupID, err := strconv.Atoi(c.Param("group_id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group ID"})
 		return
@@ -172,7 +172,7 @@ func DeleteGroup(c *gin.Context) {
 }
 
 func GetGroupUsers(c *gin.Context) {
-	groupID, err := strconv.Atoi(c.Param("id"))
+	groupID, err := strconv.Atoi(c.Param("group_id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group ID"})
 		return
@@ -281,4 +281,52 @@ func AddUserToGroup(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "User added to group successfully"})
+}
+
+func RemoveUserFromGroup(c *gin.Context) {
+	currentUser := c.MustGet("currentUser").(models.User)
+	isAdmin := c.MustGet("admin").(bool)
+
+	groupID, err := strconv.Atoi(c.Param("group_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group ID"})
+		return
+	}
+
+	userID, err := strconv.Atoi(c.Param("user_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	if !isAdmin && userID != currentUser.User_ID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to remove this user from the group"})
+		return
+	}
+
+	deleteStmt := initializers.DB.Delete("user_group").
+		Where(
+			goqu.C("user_id").Eq(userID),
+			goqu.C("group_id").Eq(groupID),
+		)
+
+	result, err := deleteStmt.Executor().Exec()
+	if err != nil {
+		log.Println(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove user from group"})
+		return
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get rows affected"})
+		return
+	}
+
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User is not a member of this group or already removed"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "User removed from group successfully"})
 }
