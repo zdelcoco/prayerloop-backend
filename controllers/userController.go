@@ -26,14 +26,14 @@ func UserSignup(c *gin.Context) {
 		return
 	}
 
-	var user models.UserSignup
+	var user models.UserProfileSignup
 
 	if err := c.ShouldBindJSON(&user); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	userCount, err := initializers.DB.From("user").Select("username").Where(goqu.C("username").Eq(user.Username)).Count()
+	userCount, err := initializers.DB.From("user_profile").Select("username").Where(goqu.C("username").Eq(user.Username)).Count()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -50,17 +50,17 @@ func UserSignup(c *gin.Context) {
 		return
 	}
 
-	newUser := models.User{
+	newUser := models.UserProfile{
 		Username:   user.Username,
 		Password:   string(passwordHash),
 		Email:      user.Email,
-		First_Name: user.FirstName,
-		Last_Name:  user.LastName,
+		First_Name: user.First_Name,
+		Last_Name:  user.Last_Name,
 		Created_By: 1,
 		Updated_By: 1,
 	}
 
-	insert := initializers.DB.Insert("user").Rows(newUser).Executor()
+	insert := initializers.DB.Insert("user_profile").Rows(newUser).Executor()
 	if _, err := insert.Exec(); err != nil {
 		log.Default().Println(insert)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -82,12 +82,24 @@ func UserLogin(c *gin.Context) {
 		return
 	}
 
-	var dbUser models.User
-	_, err := initializers.DB.From("user").Select("*").Where(goqu.C("username").Eq(user.Username)).ScanStruct(&dbUser)
+	var dbUser models.UserProfile
+	_, err := initializers.DB.From("user_profile").Select("*").Where(goqu.C("username").Eq(user.Username)).ScanStruct(&dbUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	// passwordHash, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+	// if err != nil {
+	// 	c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+	// 	return
+	// }
+
+	// update := initializers.DB.Update("user_profile").Set(goqu.Record{"password": string(passwordHash)}).Where(goqu.C("user_profile_id").Eq(dbUser.User_Profile_ID)).Executor()
+	// if _, err := update.Exec(); err != nil {
+	// 	c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update password"})
+	// 	return
+	// }
 
 	err = bcrypt.CompareHashAndPassword([]byte(dbUser.Password), []byte(user.Password))
 	if err != nil {
@@ -103,7 +115,7 @@ func UserLogin(c *gin.Context) {
 	}
 
 	generateToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"id":   dbUser.User_ID,
+		"id":   dbUser.User_Profile_ID,
 		"exp":  time.Now().Add(time.Hour * 24).Unix(),
 		"role": role,
 	})
@@ -132,7 +144,7 @@ func GetUserProfile(c *gin.Context) {
 }
 
 func GetUserGroups(c *gin.Context) {
-	currentUser := c.MustGet("currentUser").(models.User)
+	currentUser := c.MustGet("currentUser").(models.UserProfile)
 	isAdmin := c.MustGet("admin").(bool)
 
 	userID, err := strconv.Atoi(c.Param("id"))
@@ -141,31 +153,32 @@ func GetUserGroups(c *gin.Context) {
 		return
 	}
 
-	if userID != currentUser.User_ID && !isAdmin {
+	if userID != currentUser.User_Profile_ID && !isAdmin {
 		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to view this user's groups"})
 		return
 	}
 
 	query := initializers.DB.From("user_group").
 		Select(
-			"group.group_id",
-			"group.group_name",
-			"group.description",
-			"group.is_active",
-			"group.datetime_create",
-			"group.datetime_update",
-			"group.created_by",
-			"group.updated_by",
+			"group_profile.group_profile_id",
+			"group_profile.group_name",
+			"group_profile.group_description",
+			"group_profile.is_active",
+			"group_profile.datetime_create",
+			"group_profile.datetime_update",
+			"group_profile.created_by",
+			"group_profile.updated_by",
+			"group_profile.deleted",
 		).
 		InnerJoin(
-			goqu.T("group"),
-			goqu.On(goqu.Ex{"user_group.group_id": goqu.I("group.group_id")}),
+			goqu.T("group_profile"),
+			goqu.On(goqu.Ex{"user_group.group_profile_id": goqu.I("group_profile.group_profile_id")}),
 		).
 		Where(
 			goqu.And(
-				goqu.C("user_id").Table("user_group").Eq(userID),
+				goqu.C("user_profile_id").Table("user_group").Eq(userID),
 				goqu.C("is_active").Table("user_group").IsTrue(),
-				goqu.C("is_active").Table("group").IsTrue(),
+				goqu.C("is_active").Table("group_profile").IsTrue(),
 			),
 		)
 
@@ -175,7 +188,9 @@ func GetUserGroups(c *gin.Context) {
 		return
 	}
 
-	var groups []models.Group
+	log.Println(sql, args)
+
+	var groups []models.GroupProfile
 	err = initializers.DB.ScanStructs(&groups, sql, args...)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user groups"})

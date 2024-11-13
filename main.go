@@ -29,11 +29,11 @@ func main() {
 		auth.GET("/users/:id/groups", controllers.GetUserGroups)
 
 		// prayer-request routes
-		auth.POST("/prayer-requests", controllers.CreatePrayerRequest)
-		auth.GET("/prayer-requests/:id", controllers.GetPrayerRequest)
-		auth.GET("/prayer-requests", controllers.GetPrayerRequests)
-		auth.PUT("/prayer-requests/:id", controllers.UpdatePrayerRequest)
-		auth.DELETE("/prayer-requests/:id", controllers.DeletePrayerRequest)
+		// auth.POST("/prayer-requests", controllers.CreatePrayerRequest)
+		// auth.GET("/prayer-requests/:id", controllers.GetPrayerRequest)
+		// auth.GET("/prayer-requests", controllers.GetPrayerRequests)
+		// auth.PUT("/prayer-requests/:id", controllers.UpdatePrayerRequest)
+		// auth.DELETE("/prayer-requests/:id", controllers.DeletePrayerRequest)
 
 		// group routes
 		auth.POST("/groups", controllers.CreateGroup)

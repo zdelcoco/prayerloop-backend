@@ -14,7 +14,7 @@ import (
 )
 
 func CreateGroup(c *gin.Context) {
-	user := c.MustGet("currentUser").(models.User)
+	user := c.MustGet("currentUser").(models.UserProfile)
 	admin := c.MustGet("admin").(bool)
 
 	// only admins for now
@@ -29,17 +29,17 @@ func CreateGroup(c *gin.Context) {
 		return
 	}
 
-	group := models.Group{
-		Group_Name:      newGroup.Group_Name,
-		Description:     newGroup.Group_Description,
-		Is_Active:       true,
-		Created_By:      user.User_ID,
-		Updated_By:      user.User_ID,
-		Datetime_Create: time.Now(),
-		Datetime_Update: time.Now(),
+	group := models.GroupProfile{
+		Group_Name:        newGroup.Group_Name,
+		Group_Description: newGroup.Group_Description,
+		Is_Active:         true,
+		Created_By:        user.User_Profile_ID,
+		Updated_By:        user.User_Profile_ID,
+		Datetime_Create:   time.Now(),
+		Datetime_Update:   time.Now(),
 	}
 
-	insert := initializers.DB.Insert("group").Rows(group).Returning("group_id")
+	insert := initializers.DB.Insert("group_profile").Rows(group).Returning("group_profile_id")
 
 	var insertedID int
 	_, err := insert.Executor().ScanVal(&insertedID)
@@ -49,7 +49,7 @@ func CreateGroup(c *gin.Context) {
 		return
 	}
 
-	group.Group_ID = insertedID
+	group.Group_Profile_ID = insertedID
 
 	c.JSON(http.StatusCreated, group)
 }
@@ -61,9 +61,9 @@ func GetGroup(c *gin.Context) {
 		return
 	}
 
-	var group models.Group
-	found, err := initializers.DB.From("group").
-		Where(goqu.C("group_id").Eq(groupID)).
+	var group models.GroupProfile
+	found, err := initializers.DB.From("group_profile").
+		Where(goqu.C("group_profile_id").Eq(groupID)).
 		ScanStruct(&group)
 
 	if err != nil {
@@ -81,8 +81,8 @@ func GetGroup(c *gin.Context) {
 // probably make this an admin function later
 // or change group schema to include is_public for searches
 func GetAllGroups(c *gin.Context) {
-	var groups []models.Group
-	err := initializers.DB.From("group").
+	var groups []models.GroupProfile
+	err := initializers.DB.From("group_profile").
 		ScanStructs(&groups)
 
 	if err != nil {
@@ -94,7 +94,7 @@ func GetAllGroups(c *gin.Context) {
 }
 
 func UpdateGroup(c *gin.Context) {
-	user := c.MustGet("currentUser").(models.User)
+	user := c.MustGet("currentUser").(models.UserProfile)
 	admin := c.MustGet("admin").(bool)
 
 	if !admin {
@@ -114,15 +114,15 @@ func UpdateGroup(c *gin.Context) {
 		return
 	}
 
-	update := initializers.DB.Update("group").
+	update := initializers.DB.Update("group_profile").
 		Set(goqu.Record{
-			"group_name":      updateGroup.Group_Name,
-			"description":     updateGroup.Group_Description,
-			"is_active":       updateGroup.Is_Active,
-			"updated_by":      user.User_ID,
-			"datetime_update": time.Now(),
+			"group_name":        updateGroup.Group_Name,
+			"group_description": updateGroup.Group_Description,
+			"is_active":         updateGroup.Is_Active,
+			"updated_by":        user.User_Profile_ID,
+			"datetime_update":   time.Now(),
 		}).
-		Where(goqu.C("group_id").Eq(groupID))
+		Where(goqu.C("group_profile_id").Eq(groupID))
 
 	result, err := update.Executor().Exec()
 	if err != nil {
@@ -139,6 +139,8 @@ func UpdateGroup(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Group updated successfully"})
 }
 
+// only admins for now
+// todo: allow group creator to delete group
 func DeleteGroup(c *gin.Context) {
 	admin := c.MustGet("admin").(bool)
 
@@ -153,8 +155,8 @@ func DeleteGroup(c *gin.Context) {
 		return
 	}
 
-	deleteStmt := initializers.DB.Delete("group").
-		Where(goqu.C("group_id").Eq(groupID))
+	deleteStmt := initializers.DB.Delete("group_profile").
+		Where(goqu.C("group_profile_id").Eq(groupID))
 
 	result, err := deleteStmt.Executor().Exec()
 	if err != nil {
@@ -180,21 +182,21 @@ func GetGroupUsers(c *gin.Context) {
 
 	query := initializers.DB.From("user_group").
 		Select(
-			"user.user_id",
-			"user.username",
-			"user.email",
-			"user.first_name",
-			"user.last_name",
+			"user_profile.user_profile_id",
+			"user_profile.username",
+			"user_profile.email",
+			"user_profile.first_name",
+			"user_profile.last_name",
 			"user_group.created_by",
 			"user_group.updated_by",
 		).
 		InnerJoin(
-			goqu.T("user"),
-			goqu.On(goqu.Ex{"user_group.user_id": goqu.I("user.user_id")}),
+			goqu.T("user_profile"),
+			goqu.On(goqu.Ex{"user_group.user_profile_id": goqu.I("user_profile.user_profile_id")}),
 		).
 		Where(
 			goqu.And(
-				goqu.C("group_id").Table("user_group").Eq(groupID),
+				goqu.C("group_profile_id").Table("user_group").Eq(groupID),
 				goqu.C("is_active").Table("user_group").IsTrue(),
 			),
 		)
@@ -205,7 +207,7 @@ func GetGroupUsers(c *gin.Context) {
 		return
 	}
 
-	var users []models.User
+	var users []models.UserProfile
 	err = initializers.DB.ScanStructs(&users, sql, args...)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch group users"})
@@ -221,7 +223,7 @@ func GetGroupUsers(c *gin.Context) {
 }
 
 func AddUserToGroup(c *gin.Context) {
-	currentUser := c.MustGet("currentUser").(models.User)
+	currentUser := c.MustGet("currentUser").(models.UserProfile)
 	isAdmin := c.MustGet("admin").(bool)
 
 	groupID, err := strconv.Atoi(c.Param("group_id"))
@@ -236,7 +238,7 @@ func AddUserToGroup(c *gin.Context) {
 		return
 	}
 
-	if !isAdmin && userID != currentUser.User_ID {
+	if !isAdmin && userID != currentUser.User_Profile_ID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to add this user to the group"})
 		return
 	}
@@ -246,8 +248,8 @@ func AddUserToGroup(c *gin.Context) {
 	found, err := initializers.DB.From("user_group").
 		Where(
 			goqu.And(
-				goqu.C("user_id").Eq(userID),
-				goqu.C("group_id").Eq(groupID),
+				goqu.C("user_profile_id").Eq(userID),
+				goqu.C("group_profile_id").Eq(groupID),
 			),
 		).ScanStruct(&existingEntry)
 
@@ -262,13 +264,13 @@ func AddUserToGroup(c *gin.Context) {
 	}
 
 	newEntry := models.UserGroup{
-		User_ID:         userID,
-		Group_ID:        groupID,
-		Is_Active:       true,
-		Created_By:      currentUser.User_ID,
-		Updated_By:      currentUser.User_ID,
-		Datetime_Create: time.Now(),
-		Datetime_Update: time.Now(),
+		User_Profile_ID:  userID,
+		Group_Profile_ID: groupID,
+		Is_Active:        true,
+		Created_By:       currentUser.User_Profile_ID,
+		Updated_By:       currentUser.User_Profile_ID,
+		Datetime_Create:  time.Now(),
+		Datetime_Update:  time.Now(),
 	}
 
 	insert := initializers.DB.Insert("user_group").Rows(newEntry)
@@ -284,7 +286,7 @@ func AddUserToGroup(c *gin.Context) {
 }
 
 func RemoveUserFromGroup(c *gin.Context) {
-	currentUser := c.MustGet("currentUser").(models.User)
+	currentUser := c.MustGet("currentUser").(models.UserProfile)
 	isAdmin := c.MustGet("admin").(bool)
 
 	groupID, err := strconv.Atoi(c.Param("group_id"))
@@ -299,15 +301,15 @@ func RemoveUserFromGroup(c *gin.Context) {
 		return
 	}
 
-	if !isAdmin && userID != currentUser.User_ID {
+	if !isAdmin && userID != currentUser.User_Profile_ID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to remove this user from the group"})
 		return
 	}
 
 	deleteStmt := initializers.DB.Delete("user_group").
 		Where(
-			goqu.C("user_id").Eq(userID),
-			goqu.C("group_id").Eq(groupID),
+			goqu.C("user_profile_id").Eq(userID),
+			goqu.C("group_profile_id").Eq(groupID),
 		)
 
 	result, err := deleteStmt.Executor().Exec()

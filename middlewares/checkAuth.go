@@ -58,10 +58,10 @@ func CheckAuth(c *gin.Context) {
 		return
 	}
 
-	var user models.User
-	initializers.DB.From("user").Select("*").Where(goqu.C("user_id").Eq(claims["id"])).ScanStruct(&user)
+	var user models.UserProfile
+	initializers.DB.From("user_profile").Select("*").Where(goqu.C("user_profile_id").Eq(claims["id"])).ScanStruct(&user)
 
-	if user.User_ID == 0 {
+	if user.User_Profile_ID == 0 {
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
