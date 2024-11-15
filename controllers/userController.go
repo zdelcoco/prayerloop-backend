@@ -147,9 +147,9 @@ func GetUserGroups(c *gin.Context) {
 	currentUser := c.MustGet("currentUser").(models.UserProfile)
 	isAdmin := c.MustGet("admin").(bool)
 
-	userID, err := strconv.Atoi(c.Param("id"))
+	userID, err := strconv.Atoi(c.Param("user_profile_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user profile ID"})
 		return
 	}
 

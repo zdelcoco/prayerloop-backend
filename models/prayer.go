@@ -18,6 +18,23 @@ type Prayer struct {
 	Deleted            bool       `json:"deleted" goqu:"skipinsert"`
 }
 
+type UserPrayer struct {
+	User_Profile_ID    int        `json:"userProfileId" goqu:"skipinsert"`
+	Prayer_ID          int        `json:"prayerId" goqu:"skipinsert"`
+	Prayer_Type        string     `json:"prayerType"`
+	Is_Private         *bool      `json:"isPrivate"`
+	Title              string     `json:"title"`
+	Prayer_Description string     `json:"prayerDescription"`
+	Is_Answered        *bool      `json:"isAnswered"`
+	Prayer_Priority    *int       `json:"prayerPriority"`
+	Datetime_Answered  *time.Time `json:"datetimeAnswered"`
+	Created_By         int        `json:"createdBy"`
+	Datetime_Create    time.Time  `json:"datetimeCreate" goqu:"skipinsert"`
+	Updated_By         int        `json:"updatedBy"`
+	Datetime_Update    time.Time  `json:"datetimeUpdate" goqu:"skipinsert"`
+	Deleted            bool       `json:"deleted" goqu:"skipinsert"`
+}
+
 type PrayerCreate struct {
 	Prayer_Type        string  `json:"prayerType"`
 	Is_Private         *bool   `json:"isPrivate"`

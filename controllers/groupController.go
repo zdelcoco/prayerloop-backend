@@ -55,9 +55,9 @@ func CreateGroup(c *gin.Context) {
 }
 
 func GetGroup(c *gin.Context) {
-	groupID, err := strconv.Atoi(c.Param("group_id"))
+	groupID, err := strconv.Atoi(c.Param("group_profile_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID"})
 		return
 	}
 
@@ -102,9 +102,9 @@ func UpdateGroup(c *gin.Context) {
 		return
 	}
 
-	groupID, err := strconv.Atoi(c.Param("group_id"))
+	groupID, err := strconv.Atoi(c.Param("group_profile_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID"})
 		return
 	}
 
@@ -149,9 +149,9 @@ func DeleteGroup(c *gin.Context) {
 		return
 	}
 
-	groupID, err := strconv.Atoi(c.Param("group_id"))
+	groupID, err := strconv.Atoi(c.Param("group_profile_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID"})
 		return
 	}
 
@@ -174,9 +174,9 @@ func DeleteGroup(c *gin.Context) {
 }
 
 func GetGroupUsers(c *gin.Context) {
-	groupID, err := strconv.Atoi(c.Param("group_id"))
+	groupID, err := strconv.Atoi(c.Param("group_profile_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID"})
 		return
 	}
 
@@ -226,15 +226,15 @@ func AddUserToGroup(c *gin.Context) {
 	currentUser := c.MustGet("currentUser").(models.UserProfile)
 	isAdmin := c.MustGet("admin").(bool)
 
-	groupID, err := strconv.Atoi(c.Param("group_id"))
+	groupID, err := strconv.Atoi(c.Param("group_profile_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID"})
 		return
 	}
 
-	userID, err := strconv.Atoi(c.Param("user_id"))
+	userID, err := strconv.Atoi(c.Param("user_profile_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user profile ID"})
 		return
 	}
 
@@ -289,15 +289,15 @@ func RemoveUserFromGroup(c *gin.Context) {
 	currentUser := c.MustGet("currentUser").(models.UserProfile)
 	isAdmin := c.MustGet("admin").(bool)
 
-	groupID, err := strconv.Atoi(c.Param("group_id"))
+	groupID, err := strconv.Atoi(c.Param("group_profile_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID"})
 		return
 	}
 
-	userID, err := strconv.Atoi(c.Param("user_id"))
+	userID, err := strconv.Atoi(c.Param("user_profile_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user profile ID"})
 		return
 	}
 

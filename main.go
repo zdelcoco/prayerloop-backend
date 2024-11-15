@@ -26,25 +26,36 @@ func main() {
 		auth.POST("/users", controllers.UserSignup)
 
 		auth.GET("/users/me", controllers.GetUserProfile)
-		auth.GET("/users/:id/groups", controllers.GetUserGroups)
+		auth.GET("/users/:user_profile_id/groups", controllers.GetUserGroups)
 
-		// prayer-request routes
-		// auth.POST("/prayer-requests", controllers.CreatePrayerRequest)
-		// auth.GET("/prayer-requests/:id", controllers.GetPrayerRequest)
-		// auth.GET("/prayer-requests", controllers.GetPrayerRequests)
-		// auth.PUT("/prayer-requests/:id", controllers.UpdatePrayerRequest)
-		// auth.DELETE("/prayer-requests/:id", controllers.DeletePrayerRequest)
+		// todo: prayer routes
+		// auth.POST("/prayers/:prayer_id/access", controllers.AddPrayerAccess)
+		// auth.DELETE("/prayers/:prayer_id/access", controllers.RemovePrayerAccess)
+		// auth.PUT("/prayers/:prayer_id", controllers.UpdatePrayer)
+
+		// potentially admin only route
+		// auth.DELETE("/prayers/:prayer_id", controllers.DeletePrayer)
+
+		// todo: move prayer access to user and group routes
+		// auth.POST("/users/:user_profile_id/prayers", controllers.CreateUserPrayer)
+		// auth.GET("/users/:user_profile_id/prayers", controllers.GetUserPrayers)
+		// auth.POST("/groups/:group_profile_id/prayers", controllers.CreateGroupPrayer)
+		// auth.GET("/groups/:group_profile_id/prayers", controllers.GetGroupPrayers)
+
+		// could keep these routes for admin access (need to modify logic)
+		auth.GET("/prayers/:prayer_id", controllers.GetPrayer)
+		auth.GET("/prayers", controllers.GetPrayers)
 
 		// group routes
 		auth.POST("/groups", controllers.CreateGroup)
-		auth.GET("/groups/:group_id", controllers.GetGroup)
+		auth.GET("/groups/:group_profile_id", controllers.GetGroup)
 		auth.GET("/groups", controllers.GetAllGroups)
-		auth.PUT("/groups/:group_id", controllers.UpdateGroup)
-		auth.DELETE("/groups/:group_id", controllers.DeleteGroup)
+		auth.PUT("/groups/:group_profile_id", controllers.UpdateGroup)
+		auth.DELETE("/groups/:group_profile_id", controllers.DeleteGroup)
 
-		auth.GET("/groups/:group_id/users", controllers.GetGroupUsers)
-		auth.POST("/groups/:group_id/users/:user_id", controllers.AddUserToGroup)
-		auth.DELETE("/groups/:group_id/users/:user_id", controllers.RemoveUserFromGroup)
+		auth.GET("/groups/:group_profile_id/users", controllers.GetGroupUsers)
+		auth.POST("/groups/:group_profile_id/users/:user_profile_id", controllers.AddUserToGroup)
+		auth.DELETE("/groups/:group_profile_id/users/:user_profile_id", controllers.RemoveUserFromGroup)
 
 	}
 

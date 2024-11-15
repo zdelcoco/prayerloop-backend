@@ -1,75 +1,161 @@
 package controllers
 
-// import (
-// 	"log"
-// 	"net/http"
-// 	"strconv"
+import (
+	"log"
+	"net/http"
+	"strconv"
 
-// 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin"
 
-// 	"github.com/PrayerLoop/initializers"
-// 	"github.com/PrayerLoop/models"
-// 	"github.com/doug-martin/goqu/v9"
-// )
+	"github.com/PrayerLoop/initializers"
+	"github.com/PrayerLoop/models"
+	"github.com/doug-martin/goqu/v9"
+)
 
-// func GetPrayerRequest(c *gin.Context) {
-// 	user := c.MustGet("currentUser").(models.User)
-// 	admin := c.MustGet("admin").(bool)
+func GetPrayer(c *gin.Context) {
+	user := c.MustGet("currentUser").(models.UserProfile)
+	admin := c.MustGet("admin").(bool)
 
-// 	prayerRequestID, err := strconv.Atoi(c.Param("id"))
-// 	if err != nil {
-// 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prayer request ID"})
-// 		return
-// 	}
+	prayerId, err := strconv.Atoi(c.Param("prayer_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prayer ID"})
+		return
+	}
 
-// 	query := initializers.DB.From("prayer_request").
-// 		Where(goqu.C("prayer_request_id").Eq(prayerRequestID))
+	var userPrayers []models.UserPrayer
 
-// 	var prayerRequest models.PrayerRequest
-// 	found, err := query.ScanStruct(&prayerRequest)
+	query := goqu.From("prayer").
+		Distinct("user_profile_id").
+		Select(
+			goqu.Case().
+				When(goqu.I("prayer_access.access_type").Eq("user"), goqu.I("prayer_access.access_type_id")).
+				When(goqu.I("prayer_access.access_type").Eq("group"), goqu.I("user_group.user_profile_id")).
+				Else(nil).
+				As("user_profile_id"),
+			goqu.I("prayer.prayer_id"),
+			goqu.I("prayer.prayer_type"),
+			goqu.I("prayer.is_private"),
+			goqu.I("prayer.title"),
+			goqu.I("prayer.prayer_description"),
+			goqu.I("prayer.is_answered"),
+			goqu.I("prayer.prayer_priority"),
+			goqu.I("prayer.datetime_answered"),
+			goqu.I("prayer.created_by"),
+			goqu.I("prayer.datetime_create"),
+			goqu.I("prayer.updated_by"),
+			goqu.I("prayer.datetime_update"),
+			goqu.I("prayer.deleted"),
+		).
+		LeftJoin(goqu.T("prayer_access"), goqu.On(goqu.Ex{"prayer.prayer_id": goqu.I("prayer_access.prayer_id")})).
+		LeftJoin(goqu.T("user_group"), goqu.On(
+			goqu.Or(
+				goqu.Ex{"prayer_access.access_type": "group", "prayer_access.access_type_id": goqu.I("user_group.group_profile_id")},
+				goqu.Ex{"prayer_access.access_type": "user", "prayer_access.access_type_id": goqu.I("user_group.user_profile_id")},
+			),
+		)).
+		Where(goqu.And(goqu.I("prayer.prayer_id").Eq(prayerId))).
+		Order(goqu.I("user_profile_id").Asc(), goqu.I("prayer_access.access_type").Asc())
 
-// 	if err != nil {
-// 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch prayer request"})
-// 		return
-// 	}
+	sql, _, err := query.ToSQL()
+	if err != nil {
+		log.Println(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to build query"})
+		return
+	}
 
-// 	if !found {
-// 		c.JSON(http.StatusNotFound, gin.H{"error": "Prayer request not found"})
-// 		return
-// 	}
+	if err := initializers.DB.ScanStructsContext(c, &userPrayers, sql); err != nil {
+		log.Println(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch prayer record"})
+		return
+	}
 
-// 	if prayerRequest.User_ID != user.User_ID && !admin {
-// 		c.JSON(http.StatusUnauthorized, gin.H{"error": "You are not authorized to view this prayer request"})
-// 		return
-// 	}
+	if len(userPrayers) > 0 {
+		// return first instance of prayer regardless of user access
+		if admin {
+			c.JSON(http.StatusOK, userPrayers[0])
+			return
+		}
 
-// 	c.JSON(http.StatusOK, prayerRequest)
-// }
+		// otherwise, find the first instance of the prayer that the user has access
+		for _, up := range userPrayers {
+			if up.User_Profile_ID == user.User_Profile_ID {
+				c.JSON(http.StatusOK, up)
+				return
+			}
+		}
 
-// func GetPrayerRequests(c *gin.Context) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "You are not authorized to view this prayer record"})
+		return
 
-// 	user := c.MustGet("currentUser").(models.User)
+	} else {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Prayer record not found"})
+		return
+	}
 
-// 	log.Println(user.User_ID)
+}
 
-// 	var prayerRequests []models.PrayerRequest
-// 	// returns all prayer requests for the user sorted by datetime_update
-// 	err := initializers.DB.From("prayer_request").Select("*").Where(goqu.C("user_id").Eq(user.User_ID)).Order(goqu.I("datetime_update").Desc()).ScanStructs(&prayerRequests)
-// 	if err != nil {
-// 		c.JSON(500, gin.H{"error": err.Error()})
-// 		return
-// 	}
+func GetPrayers(c *gin.Context) {
 
-// 	if len(prayerRequests) == 0 {
-// 		c.JSON(200, gin.H{"message": "No prayer requests found."})
-// 		return
-// 	}
+	user := c.MustGet("currentUser").(models.UserProfile)
 
-// 	c.JSON(200, gin.H{
-// 		"message":        "Prayer requests retrieved successfully.",
-// 		"prayerRequests": prayerRequests,
-// 	})
-// }
+	log.Println(user.User_Profile_ID)
+
+	var userPrayers []models.UserPrayer
+
+	err := initializers.DB.From("prayer_access").
+		Select(
+			goqu.DISTINCT("user_profile_id"),
+			goqu.Case().
+				When(goqu.I("prayer_access.access_type").Eq("user"), goqu.I("prayer_access.access_type_id")).
+				When(goqu.I("prayer_access.access_type").Eq("group"), goqu.I("user_group.user_profile_id")).
+				Else(nil).
+				As("user_profile_id"),
+			goqu.I("prayer.prayer_id"),
+			goqu.I("prayer.prayer_type"),
+			goqu.I("prayer.is_private"),
+			goqu.I("prayer.title"),
+			goqu.I("prayer.prayer_description"),
+			goqu.I("prayer.is_answered"),
+			goqu.I("prayer.prayer_priority"),
+			goqu.I("prayer.datetime_answered"),
+			goqu.I("prayer.created_by"),
+			goqu.I("prayer.datetime_create"),
+			goqu.I("prayer.updated_by"),
+			goqu.I("prayer.datetime_update"),
+			goqu.I("prayer.deleted"),
+		).
+		Join(
+			goqu.T("user_group"),
+			goqu.On(
+				goqu.Or(
+					goqu.Ex{"prayer_access.access_type": "group", "prayer_access.access_type_id": goqu.I("user_group.group_profile_id")},
+					goqu.Ex{"prayer_access.access_type": "user", "prayer_access.access_type_id": goqu.I("user_group.user_profile_id")},
+				),
+			),
+		).
+		Join(
+			goqu.T("prayer"),
+			goqu.On(goqu.Ex{"prayer_access.prayer_id": goqu.I("prayer.prayer_id")}),
+		).
+		Where(goqu.Ex{"user_group.user_profile_id": user.User_Profile_ID}).
+		Order(goqu.I("prayer.prayer_id").Asc()).
+		ScanStructsContext(c, &userPrayers)
+
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(userPrayers) == 0 {
+		c.JSON(200, gin.H{"message": "No prayer records found."})
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"message": "Prayer records retrieved successfully.",
+		"prayers": userPrayers,
+	})
+}
 
 // func CreatePrayerRequest(c *gin.Context) {
 
@@ -117,7 +203,7 @@ package controllers
 // 	user := c.MustGet("currentUser").(models.User)
 // 	admin := c.MustGet("admin").(bool)
 
-// 	prayerRequestID, err := strconv.Atoi(c.Param("id"))
+// 	prayerId, err := strconv.Atoi(c.Param("id"))
 // 	if err != nil {
 // 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prayer request ID"})
 // 		return
@@ -125,7 +211,7 @@ package controllers
 
 // 	var existingPrayerRequest models.PrayerRequest
 // 	found, err := initializers.DB.From("prayer_request").
-// 		Where(goqu.C("prayer_request_id").Eq(prayerRequestID)).
+// 		Where(goqu.C("prayer_request_id").Eq(prayerId)).
 // 		ScanStruct(&existingPrayerRequest)
 
 // 	if err != nil {
@@ -168,7 +254,7 @@ package controllers
 
 // 	update := initializers.DB.Update("prayer_request").
 // 		Set(updateRecord).
-// 		Where(goqu.C("prayer_request_id").Eq(prayerRequestID))
+// 		Where(goqu.C("prayer_request_id").Eq(prayerId))
 
 // 	result, err := update.Executor().Exec()
 // 	if err != nil {
@@ -189,7 +275,7 @@ package controllers
 // 	user := c.MustGet("currentUser").(models.User)
 // 	admin := c.MustGet("admin").(bool)
 
-// 	prayerRequestID, err := strconv.Atoi(c.Param("id"))
+// 	prayerId, err := strconv.Atoi(c.Param("id"))
 // 	if err != nil {
 // 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prayer request ID"})
 // 		return
@@ -197,7 +283,7 @@ package controllers
 
 // 	var existingPrayerRequest models.PrayerRequest
 // 	found, err := initializers.DB.From("prayer_request").
-// 		Where(goqu.C("prayer_request_id").Eq(prayerRequestID)).
+// 		Where(goqu.C("prayer_request_id").Eq(prayerId)).
 // 		ScanStruct(&existingPrayerRequest)
 
 // 	if err != nil {
@@ -215,7 +301,7 @@ package controllers
 // 	}
 
 // 	deleteQuery := initializers.DB.Delete("prayer_request").
-// 		Where(goqu.C("prayer_request_id").Eq(prayerRequestID))
+// 		Where(goqu.C("prayer_request_id").Eq(prayerId))
 
 // 	result, err := deleteQuery.Executor().Exec()
 // 	if err != nil {
