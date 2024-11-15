@@ -55,6 +55,9 @@ func CreateGroup(c *gin.Context) {
 }
 
 func GetGroup(c *gin.Context) {
+	user := c.MustGet("currentUser").(models.UserProfile)
+	admin := c.MustGet("admin").(bool)
+
 	groupID, err := strconv.Atoi(c.Param("group_profile_id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID"})
@@ -63,24 +66,55 @@ func GetGroup(c *gin.Context) {
 
 	var group models.GroupProfile
 	found, err := initializers.DB.From("group_profile").
-		Where(goqu.C("group_profile_id").Eq(groupID)).
+		Select(
+			goqu.I("group_profile.group_profile_id"),
+			goqu.I("group_profile.group_name"),
+			goqu.I("group_profile.group_description"),
+			goqu.I("group_profile.is_active"),
+			goqu.I("group_profile.created_by"),
+			goqu.I("group_profile.updated_by"),
+			goqu.I("group_profile.datetime_create"),
+			goqu.I("group_profile.datetime_update"),
+		).
+		Join(
+			goqu.T("user_group"),
+			goqu.On(goqu.Ex{"group_profile.group_profile_id": goqu.I("user_group.group_profile_id")}),
+		).
+		Where(
+			goqu.Ex{
+				"group_profile.group_profile_id": groupID,
+				"user_group.user_profile_id":     user.User_Profile_ID,
+			},
+		).
 		ScanStruct(&group)
 
 	if err != nil {
+		log.Println(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch group"})
 		return
 	}
 	if !found {
+		if !admin {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "You are not authorized to view this group"})
+			return
+		}
 		c.JSON(http.StatusNotFound, gin.H{"error": "Group not found"})
 		return
 	}
 
 	c.JSON(http.StatusOK, group)
+
 }
 
-// probably make this an admin function later
-// or change group schema to include is_public for searches
+// change group schema to include is_public for searches?
 func GetAllGroups(c *gin.Context) {
+	admin := c.MustGet("admin").(bool)
+
+	if !admin {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Admin only route"})
+		return
+	}
+
 	var groups []models.GroupProfile
 	err := initializers.DB.From("group_profile").
 		ScanStructs(&groups)
@@ -331,4 +365,76 @@ func RemoveUserFromGroup(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "User removed from group successfully"})
+}
+
+func GetGroupPrayers(c *gin.Context) {
+	currentUser := c.MustGet("currentUser").(models.UserProfile)
+
+	groupID, err := strconv.Atoi(c.Param("group_profile_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID"})
+		return
+	}
+
+	// todo: add function that returns boolean if user is in group
+	// this method currently works, but is unclear on unauth vs no records
+	// the dataset won't populate if the user is not in the group due to join on user_group
+
+	var userPrayers []models.UserPrayer
+
+	dbErr := initializers.DB.From("prayer_access").
+		Select(
+			goqu.DISTINCT("user_profile_id"),
+			goqu.Case().
+				When(goqu.I("prayer_access.access_type").Eq("user"), goqu.I("prayer_access.access_type_id")).
+				When(goqu.I("prayer_access.access_type").Eq("group"), goqu.I("user_group.user_profile_id")).
+				Else(nil).
+				As("user_profile_id"),
+			goqu.I("prayer.prayer_id"),
+			goqu.I("prayer.prayer_type"),
+			goqu.I("prayer.is_private"),
+			goqu.I("prayer.title"),
+			goqu.I("prayer.prayer_description"),
+			goqu.I("prayer.is_answered"),
+			goqu.I("prayer.prayer_priority"),
+			goqu.I("prayer.datetime_answered"),
+			goqu.I("prayer.created_by"),
+			goqu.I("prayer.datetime_create"),
+			goqu.I("prayer.updated_by"),
+			goqu.I("prayer.datetime_update"),
+			goqu.I("prayer.deleted"),
+		).
+		Join(
+			goqu.T("user_group"),
+			goqu.On(
+				goqu.Ex{"prayer_access.access_type": "group", "prayer_access.access_type_id": goqu.I("user_group.group_profile_id")},
+			),
+		).
+		Join(
+			goqu.T("prayer"),
+			goqu.On(goqu.Ex{"prayer_access.prayer_id": goqu.I("prayer.prayer_id")}),
+		).
+		Where(
+			goqu.And(
+				goqu.Ex{"user_group.user_profile_id": currentUser.User_Profile_ID},
+				goqu.Ex{"user_group.group_profile_id": groupID},
+			),
+		).
+		Order(goqu.I("prayer.prayer_id").Asc()).
+		ScanStructsContext(c, &userPrayers)
+
+	if dbErr != nil {
+		c.JSON(500, gin.H{"error": dbErr.Error()})
+		return
+	}
+
+	if len(userPrayers) == 0 {
+		c.JSON(200, gin.H{"message": "No prayer records found."})
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"message": "Prayer records retrieved successfully.",
+		"prayers": userPrayers,
+	})
 }

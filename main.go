@@ -38,9 +38,9 @@ func main() {
 
 		// todo: move prayer access to user and group routes
 		// auth.POST("/users/:user_profile_id/prayers", controllers.CreateUserPrayer)
-		// auth.GET("/users/:user_profile_id/prayers", controllers.GetUserPrayers)
+		auth.GET("/users/:user_profile_id/prayers", controllers.GetUserPrayers)
 		// auth.POST("/groups/:group_profile_id/prayers", controllers.CreateGroupPrayer)
-		// auth.GET("/groups/:group_profile_id/prayers", controllers.GetGroupPrayers)
+		auth.GET("/groups/:group_profile_id/prayers", controllers.GetGroupPrayers)
 
 		// could keep these routes for admin access (need to modify logic)
 		auth.GET("/prayers/:prayer_id", controllers.GetPrayer)

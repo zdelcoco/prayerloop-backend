@@ -204,3 +204,68 @@ func GetUserGroups(c *gin.Context) {
 
 	c.JSON(http.StatusOK, groups)
 }
+
+func GetUserPrayers(c *gin.Context) {
+	currentUser := c.MustGet("currentUser").(models.UserProfile)
+	isAdmin := c.MustGet("admin").(bool)
+
+	userID, err := strconv.Atoi(c.Param("user_profile_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user profile ID"})
+		return
+	}
+
+	if userID != currentUser.User_Profile_ID && !isAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to view this user's groups"})
+		return
+	}
+
+	var userPrayers []models.UserPrayer
+
+	dbErr := initializers.DB.From("prayer_access").
+		Select(
+			goqu.DISTINCT("user_profile_id"),
+			goqu.I("user_group.user_profile_id").As("user_profile_id"),
+			goqu.I("prayer.prayer_id"),
+			goqu.I("prayer.prayer_type"),
+			goqu.I("prayer.is_private"),
+			goqu.I("prayer.title"),
+			goqu.I("prayer.prayer_description"),
+			goqu.I("prayer.is_answered"),
+			goqu.I("prayer.prayer_priority"),
+			goqu.I("prayer.datetime_answered"),
+			goqu.I("prayer.created_by"),
+			goqu.I("prayer.datetime_create"),
+			goqu.I("prayer.updated_by"),
+			goqu.I("prayer.datetime_update"),
+			goqu.I("prayer.deleted"),
+		).
+		Join(
+			goqu.T("user_group"),
+			goqu.On(
+				goqu.Ex{"prayer_access.access_type": "user", "prayer_access.access_type_id": goqu.I("user_group.user_profile_id")},
+			),
+		).
+		Join(
+			goqu.T("prayer"),
+			goqu.On(goqu.Ex{"prayer_access.prayer_id": goqu.I("prayer.prayer_id")}),
+		).
+		Where(goqu.Ex{"user_group.user_profile_id": currentUser.User_Profile_ID}).
+		Order(goqu.I("prayer.prayer_id").Asc()).
+		ScanStructsContext(c, &userPrayers)
+
+	if dbErr != nil {
+		c.JSON(500, gin.H{"error": dbErr.Error()})
+		return
+	}
+
+	if len(userPrayers) == 0 {
+		c.JSON(200, gin.H{"message": "No prayer records found."})
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"message": "Prayer records retrieved successfully.",
+		"prayers": userPrayers,
+	})
+}
