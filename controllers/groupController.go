@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -368,7 +369,7 @@ func RemoveUserFromGroup(c *gin.Context) {
 }
 
 func GetGroupPrayers(c *gin.Context) {
-	currentUser := c.MustGet("currentUser").(models.UserProfile)
+	isAdmin := c.MustGet("admin").(bool)
 
 	groupID, err := strconv.Atoi(c.Param("group_profile_id"))
 	if err != nil {
@@ -376,9 +377,16 @@ func GetGroupPrayers(c *gin.Context) {
 		return
 	}
 
-	// todo: add function that returns boolean if user is in group
-	// this method currently works, but is unclear on unauth vs no records
-	// the dataset won't populate if the user is not in the group due to join on user_group
+	if !isGroupExists(groupID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Group doesn't exist"})
+		return
+	}
+
+	if !isUserInGroup(c, groupID) &&
+		!isAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to view prayers for this group"})
+		return
+	}
 
 	var userPrayers []models.UserPrayer
 
@@ -414,12 +422,7 @@ func GetGroupPrayers(c *gin.Context) {
 			goqu.T("prayer"),
 			goqu.On(goqu.Ex{"prayer_access.prayer_id": goqu.I("prayer.prayer_id")}),
 		).
-		Where(
-			goqu.And(
-				goqu.Ex{"user_group.user_profile_id": currentUser.User_Profile_ID},
-				goqu.Ex{"user_group.group_profile_id": groupID},
-			),
-		).
+		Where(goqu.Ex{"user_group.group_profile_id": groupID}).
 		Order(goqu.I("prayer.prayer_id").Asc()).
 		ScanStructsContext(c, &userPrayers)
 
@@ -429,12 +432,58 @@ func GetGroupPrayers(c *gin.Context) {
 	}
 
 	if len(userPrayers) == 0 {
-		c.JSON(200, gin.H{"message": "No prayer records found."})
+		c.JSON(http.StatusOK, gin.H{"message": "No prayer records found."})
 		return
 	}
 
-	c.JSON(200, gin.H{
+	c.JSON(http.StatusOK, gin.H{
 		"message": "Prayer records retrieved successfully.",
 		"prayers": userPrayers,
 	})
+}
+
+func isUserInGroup(c *gin.Context, groupID int) bool {
+	currentUser := c.MustGet("currentUser").(models.UserProfile)
+
+	var numRows int
+	_, err := initializers.DB.From("user_group").
+		Select(goqu.COUNT("user_group_id")).
+		Where(
+			goqu.Ex{
+				"user_group.group_profile_id": groupID,
+				"user_group.user_profile_id":  currentUser.User_Profile_ID,
+			},
+		).ScanVal(&numRows)
+
+	if err != nil {
+		panic(fmt.Sprintf("error checking if user is in group: %s", err))
+	}
+
+	if numRows == 1 {
+		return true
+	}
+
+	return false
+}
+
+func isGroupExists(groupID int) bool {
+	var numRows int
+	_, err := initializers.DB.From("group_profile").
+		Select(goqu.COUNT("group_profile_id")).
+		Where(
+			goqu.Ex{
+				"group_profile.group_profile_id": groupID,
+			},
+		).ScanVal(&numRows)
+
+	if err != nil {
+		panic(fmt.Sprintf("error checking if group exists: %s", err))
+	}
+
+	if numRows == 1 {
+		return true
+	}
+
+	return false
+
 }

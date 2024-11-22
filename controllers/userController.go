@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -268,4 +269,77 @@ func GetUserPrayers(c *gin.Context) {
 		"message": "Prayer records retrieved successfully.",
 		"prayers": userPrayers,
 	})
+}
+
+func CreateUserPrayer(c *gin.Context) {
+	currentUser := c.MustGet("currentUser").(models.UserProfile)
+	isAdmin := c.MustGet("admin").(bool)
+
+	userID, err := strconv.Atoi(c.Param("user_profile_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user profile ID"})
+		return
+	}
+
+	if currentUser.User_Profile_ID != userID &&
+		!isAdmin {
+		c.JSON(http.StatusForbidden,
+			gin.H{"error": fmt.Sprintf("You don't have permission to create a prayer on behalf of user %d",
+				currentUser.User_Profile_ID)})
+		return
+	}
+
+	var newPrayer models.PrayerCreate
+	if err := c.BindJSON(&newPrayer); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	newPrayerEntry := models.Prayer{
+		Prayer_Type:        newPrayer.Prayer_Type,
+		Is_Private:         newPrayer.Is_Private,
+		Title:              newPrayer.Title,
+		Prayer_Description: newPrayer.Prayer_Description,
+		Is_Answered:        newPrayer.Is_Answered,
+		Datetime_Answered:  newPrayer.Datetime_Answered,
+		Prayer_Priority:    newPrayer.Prayer_Priority,
+		Created_By:         currentUser.User_Profile_ID,
+		Updated_By:         currentUser.User_Profile_ID,
+		Datetime_Create:    time.Now(),
+		Datetime_Update:    time.Now(),
+	}
+
+	prayerInsert := initializers.DB.Insert("prayer").Rows(newPrayerEntry).Returning("prayer_id")
+
+	var insertedPrayerID int
+	_, err = prayerInsert.Executor().ScanVal(&insertedPrayerID)
+	if err != nil {
+		log.Println(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create prayer record"})
+		return
+	}
+
+	newPrayerAccessEntry := models.PrayerAccess{
+		Prayer_ID:       insertedPrayerID,
+		Access_Type:     "user",
+		Access_Type_ID:  userID,
+		Created_By:      currentUser.User_Profile_ID,
+		Updated_By:      currentUser.User_Profile_ID,
+		Datetime_Create: time.Now(),
+		Datetime_Update: time.Now(),
+	}
+
+	prayerAccessInsert := initializers.DB.Insert("prayer_access").Rows(newPrayerAccessEntry).Returning("prayer_access_id")
+
+	var insertedPrayerAccessID int
+	_, err = prayerAccessInsert.Executor().ScanVal(&insertedPrayerAccessID)
+	if err != nil {
+		log.Println(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create prayer access record"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"message": "Prayer created sucessfully!",
+		"prayerId":       insertedPrayerID,
+		"prayerAccessId": insertedPrayerAccessID})
 }
