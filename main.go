@@ -45,12 +45,13 @@ func main() {
 		auth.POST("/groups/:group_profile_id/users/:user_profile_id", controllers.AddUserToGroup)
 		auth.DELETE("/groups/:group_profile_id/users/:user_profile_id", controllers.RemoveUserFromGroup)
 
-		// auth.PUT("/prayers/:prayer_id", controllers.UpdatePrayer)
-		// auth.DELETE("/prayers/:prayer_id", controllers.DeletePrayer)
+		// prayer routes
+		auth.PUT("/prayers/:prayer_id", controllers.UpdatePrayer)
+		auth.DELETE("/prayers/:prayer_id", controllers.DeletePrayer)
 		auth.POST("/prayers/:prayer_id/access", controllers.AddPrayerAccess)
 		auth.DELETE("/prayers/:prayer_id/access/:prayer_access_id", controllers.RemovePrayerAccess)
 
-		//admin routes
+		//admin only routes
 		admin := auth.Group("/")
 		admin.Use(middlewares.CheckAdmin)
 		{

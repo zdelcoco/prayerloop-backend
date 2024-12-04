@@ -422,7 +422,12 @@ func GetGroupPrayers(c *gin.Context) {
 			goqu.T("prayer"),
 			goqu.On(goqu.Ex{"prayer_access.prayer_id": goqu.I("prayer.prayer_id")}),
 		).
-		Where(goqu.Ex{"user_group.group_profile_id": groupID}).
+		Where(
+			goqu.And(
+				goqu.Ex{"user_group.group_profile_id": groupID},
+				goqu.Ex{"prayer.deleted": false},
+			),
+		).
 		Order(goqu.I("prayer.prayer_id").Asc()).
 		ScanStructsContext(c, &userPrayers)
 

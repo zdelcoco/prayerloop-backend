@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"reflect"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -25,13 +26,15 @@ func GetPrayer(c *gin.Context) {
 
 	var userPrayers []models.UserPrayer
 
+	// user_profile_id will be nil if all prayer_access records have been deleted
+	// since the struct can't handle that, assign to 0
 	query := goqu.From("prayer").
 		Distinct("user_profile_id").
 		Select(
 			goqu.Case().
 				When(goqu.I("prayer_access.access_type").Eq("user"), goqu.I("prayer_access.access_type_id")).
 				When(goqu.I("prayer_access.access_type").Eq("group"), goqu.I("user_group.user_profile_id")).
-				Else(nil).
+				Else(0).
 				As("user_profile_id"),
 			goqu.I("prayer.prayer_id"),
 			goqu.I("prayer.prayer_type"),
@@ -136,7 +139,12 @@ func GetPrayers(c *gin.Context) {
 		).
 		Join(
 			goqu.T("prayer"),
-			goqu.On(goqu.Ex{"prayer_access.prayer_id": goqu.I("prayer.prayer_id")}),
+			goqu.On(
+				goqu.And(
+					goqu.Ex{"prayer_access.prayer_id": goqu.I("prayer.prayer_id")},
+					goqu.Ex{"prayer.deleted": false},
+				),
+			),
 		).
 		Where(goqu.Ex{"user_group.user_profile_id": user.User_Profile_ID}).
 		Order(goqu.I("prayer.prayer_id").Asc()).
@@ -176,11 +184,11 @@ func AddPrayerAccess(c *gin.Context) {
 
 	var existingPrayer models.Prayer
 	prayerFound, err := initializers.DB.From("prayer").
-		Where(goqu.C("prayer_id").Eq(prayerId)).
+		Where(goqu.C("prayer_id").Eq(prayerId), goqu.C("deleted").Eq(false)).
 		ScanStruct(&existingPrayer)
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Prayer record doesn't exist", "details": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Prayer record doesn't exist or is marked deleted", "details": err.Error()})
 		return
 	}
 
@@ -288,11 +296,11 @@ func RemovePrayerAccess(c *gin.Context) {
 
 	var existingPrayer models.Prayer
 	prayerFound, err := initializers.DB.From("prayer").
-		Where(goqu.C("prayer_id").Eq(prayerId)).
+		Where(goqu.C("prayer_id").Eq(prayerId), goqu.C("deleted").Eq(false)).
 		ScanStruct(&existingPrayer)
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Prayer record doesn't exist", "details": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Prayer record doesn't exist or is marked deleted", "details": err.Error()})
 		return
 	}
 
@@ -387,4 +395,159 @@ func RemovePrayerAccess(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Prayer access removed successfully"})
 
+}
+
+func UpdatePrayer(c *gin.Context) {
+	userID := c.MustGet("currentUser").(models.UserProfile).User_Profile_ID
+	admin := c.MustGet("admin").(bool)
+
+	prayerId, err := strconv.Atoi(c.Param("prayer_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prayer ID", "details": err.Error()})
+		return
+	}
+
+	var existingPrayer models.Prayer
+	prayerFound, err := initializers.DB.From("prayer").
+		Where(goqu.C("prayer_id").Eq(prayerId), goqu.C("deleted").Eq(false)).
+		ScanStruct(&existingPrayer)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Prayer record doesn't exist or is marked deleted", "details": err.Error()})
+		return
+	}
+
+	if !prayerFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Prayer record not found"})
+		return
+	}
+
+	var updatedPrayer models.PrayerCreate
+	if err := c.BindJSON(&updatedPrayer); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+
+	if !admin && existingPrayer.Created_By != userID {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "You are not authorized to update this prayer"})
+		return
+	}
+
+	// if any incoming field is nil, retain the existing value
+	// pass updatedPrayer by reference to modify the original (underlying) struct
+	existingPrayerValue := reflect.ValueOf(existingPrayer)
+	updatedPrayerValue := reflect.ValueOf(&updatedPrayer).Elem()
+
+	// if any field in updatedPrayer is zero value, get the corresponding field value
+	// from the existingPrayer struct
+	for i := 0; i < updatedPrayerValue.NumField(); i++ {
+		field := updatedPrayerValue.Field(i)
+		if field.IsZero() {
+			existingField := existingPrayerValue.Field(i)
+			if field.Type().AssignableTo(existingField.Type()) {
+				field.Set(existingField)
+			}
+		}
+	}
+
+	updateQuery := initializers.DB.Update("prayer").
+		Set(goqu.Record{
+			"prayer_type":        updatedPrayer.Prayer_Type,
+			"is_private":         updatedPrayer.Is_Private,
+			"title":              updatedPrayer.Title,
+			"prayer_description": updatedPrayer.Prayer_Description,
+			"is_answered":        updatedPrayer.Is_Answered,
+			"datetime_answered":  updatedPrayer.Datetime_Answered,
+			"prayer_priority":    updatedPrayer.Prayer_Priority,
+			"updated_by":         userID,
+			"datetime_update":    goqu.L("NOW()"),
+		}).
+		Where(goqu.C("prayer_id").Eq(prayerId))
+
+	result, err := updateQuery.Executor().Exec()
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update prayer record", "details": err.Error()})
+		return
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+
+	if rowsAffected == 0 {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "No rows were updated"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Prayer record updated successfully"})
+
+}
+
+func DeletePrayer(c *gin.Context) {
+	userID := c.MustGet("currentUser").(models.UserProfile).User_Profile_ID
+	admin := c.MustGet("admin").(bool)
+
+	prayerId, err := strconv.Atoi(c.Param("prayer_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prayer ID", "details": err.Error()})
+		return
+	}
+
+	var existingPrayer models.Prayer
+	prayerFound, err := initializers.DB.From("prayer").
+		Where(goqu.C("prayer_id").Eq(prayerId), goqu.C("deleted").Eq(false)).
+		ScanStruct(&existingPrayer)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Prayer record doesn't exist or is already marked deleted", "details": err.Error()})
+		return
+	}
+
+	if !prayerFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Prayer record not found"})
+		return
+	}
+
+	if !admin && existingPrayer.Created_By != userID {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "You are not authorized to delete this prayer"})
+		return
+	}
+
+	// find any assoicated prayer_access records.  if any exist, cannot delete prayer
+	var prayerAccessCount int
+	_, err = initializers.DB.From("prayer_access").
+		Select(goqu.COUNT("*")).
+		Where(goqu.C("prayer_id").Eq(prayerId)).
+		ScanVal(&prayerAccessCount)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check for related prayer access records", "details": err.Error()})
+		return
+	}
+
+	if prayerAccessCount > 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "Cannot delete prayer record while related access record(s) exist"})
+		return
+	}
+
+	updateQuery := initializers.DB.Update("prayer").
+		Set(goqu.Record{
+			"deleted": true,
+		}).
+		Where(goqu.C("prayer_id").Eq(prayerId))
+
+	result, err := updateQuery.Executor().Exec()
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to mark prayer record as deleted", "details": err.Error()})
+		return
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+
+	if rowsAffected == 0 {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "No rows were marked as deleted"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Prayer record marked as deleted successfully"})
 }
