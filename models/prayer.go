@@ -55,3 +55,8 @@ type PrayerAccess struct {
 	Created_By       int       `json:"createdBy"`
 	Updated_By       int       `json:"updatedBy"`
 }
+
+type PrayerAccessCreate struct {
+	Access_Type    string `json:"accessType"`
+	Access_Type_ID int    `json:"accessTypeId"`
+}

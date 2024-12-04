@@ -18,7 +18,7 @@ func GetPrayer(c *gin.Context) {
 
 	prayerId, err := strconv.Atoi(c.Param("prayer_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prayer ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prayer ID", "details": err.Error()})
 		return
 	}
 
@@ -59,7 +59,7 @@ func GetPrayer(c *gin.Context) {
 	sql, _, err := query.ToSQL()
 	if err != nil {
 		log.Println(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to build query"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to build query", "details": err.Error()})
 		return
 	}
 
@@ -155,6 +155,120 @@ func GetPrayers(c *gin.Context) {
 		"message": "Prayer records retrieved successfully.",
 		"prayers": userPrayers,
 	})
+}
+
+func AddPrayerAccess(c *gin.Context) {
+	userID := c.MustGet("currentUser").(models.UserProfile).User_Profile_ID
+	admin := c.MustGet("admin").(bool)
+
+	prayerId, err := strconv.Atoi(c.Param("prayer_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prayer ID", "details": err.Error()})
+		return
+	}
+
+	var newPrayerAccess models.PrayerAccessCreate
+	if err := c.BindJSON(&newPrayerAccess); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+
+	var existingPrayer models.Prayer
+	prayerFound, err := initializers.DB.From("prayer").
+		Where(goqu.C("prayer_id").Eq(prayerId)).
+		ScanStruct(&existingPrayer)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Prayer record doesn't exist", "details": err.Error()})
+		return
+	}
+
+	if prayerFound {
+		// check if access is already granted
+		var existingPrayerAccess models.PrayerAccess
+		accessGranted, err := initializers.DB.From("prayer_access").
+			Select(
+				goqu.I("prayer_access.prayer_access_id"),
+				goqu.I("prayer_access.prayer_id"),
+				goqu.I("prayer_access.access_type"),
+				goqu.I("prayer_access.access_type_id"),
+				goqu.I("prayer_access.datetime_create"),
+				goqu.I("prayer_access.datetime_update"),
+				goqu.I("prayer_access.created_by"),
+				goqu.I("prayer_access.updated_by"),
+			).
+			Where(
+				goqu.C("access_type").Eq(newPrayerAccess.Access_Type),
+				goqu.C("access_type_id").Eq(newPrayerAccess.Access_Type_ID),
+				goqu.C("prayer_id").Eq(prayerId)).
+			ScanStruct(&existingPrayerAccess)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check if access is already granted", "details": err.Error()})
+			return
+		}
+
+		if accessGranted {
+			c.JSON(http.StatusConflict, gin.H{"error": "Access already granted"})
+			return
+		}
+
+		// check to see if logged in user has permission to give access to this prayer
+		var prayerAccess models.PrayerAccess
+		accessFound, err := initializers.DB.From("prayer_access").
+			Select(
+				goqu.I("prayer_access.prayer_access_id"),
+				goqu.I("prayer_access.prayer_id"),
+				goqu.I("prayer_access.access_type"),
+				goqu.I("prayer_access.access_type_id"),
+				goqu.I("prayer_access.datetime_create"),
+				goqu.I("prayer_access.datetime_update"),
+				goqu.I("prayer_access.created_by"),
+				goqu.I("prayer_access.updated_by"),
+			).
+			Join(
+				goqu.T("user_group"),
+				goqu.On(
+					goqu.Or(
+						goqu.Ex{"prayer_access.access_type": "group", "prayer_access.access_type_id": goqu.I("user_group.group_profile_id")},
+						goqu.Ex{"prayer_access.access_type": "user", "prayer_access.access_type_id": goqu.I("user_group.user_profile_id")},
+					),
+				),
+			).
+			Where(goqu.C("prayer_id").Eq(prayerId), goqu.C("user_profile_id").Eq(userID)).
+			Order(goqu.I("user_profile_id").Asc(), goqu.I("prayer_access.access_type").Asc()).
+			ScanStruct(&prayerAccess)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch prayer access record", "details": err.Error()})
+			return
+		}
+
+		if !admin && prayerAccess.Created_By != userID {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "You are not authorized to grant access to this prayer"})
+			return
+		} else if accessFound || admin {
+
+			prayerAccessInsert := models.PrayerAccess{
+				Prayer_ID:      prayerId,
+				Access_Type:    newPrayerAccess.Access_Type,
+				Access_Type_ID: newPrayerAccess.Access_Type_ID,
+				Created_By:     userID,
+				Updated_By:     userID,
+			}
+
+			insert := initializers.DB.Insert("prayer_access").Rows(prayerAccessInsert).Executor()
+			if _, err := insert.Exec(); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add prayer access", "details": err.Error()})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"message": "Prayer access added successfully"})
+		}
+	} else {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Prayer record not found"})
+		return
+	}
+
 }
 
 // func CreatePrayerRequest(c *gin.Context) {

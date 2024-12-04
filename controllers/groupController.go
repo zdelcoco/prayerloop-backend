@@ -46,7 +46,7 @@ func CreateGroup(c *gin.Context) {
 	_, err := insert.Executor().ScanVal(&insertedID)
 	if err != nil {
 		log.Println(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create group"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create group", "details": err.Error()})
 		return
 	}
 
@@ -61,7 +61,7 @@ func GetGroup(c *gin.Context) {
 
 	groupID, err := strconv.Atoi(c.Param("group_profile_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID", "details": err.Error()})
 		return
 	}
 
@@ -91,7 +91,7 @@ func GetGroup(c *gin.Context) {
 
 	if err != nil {
 		log.Println(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch group"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch group", "details": err.Error()})
 		return
 	}
 	if !found {
@@ -121,7 +121,7 @@ func GetAllGroups(c *gin.Context) {
 		ScanStructs(&groups)
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch groups"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch groups", "details": err.Error()})
 		return
 	}
 
@@ -139,7 +139,7 @@ func UpdateGroup(c *gin.Context) {
 
 	groupID, err := strconv.Atoi(c.Param("group_profile_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID", "details": err.Error()})
 		return
 	}
 
@@ -161,7 +161,7 @@ func UpdateGroup(c *gin.Context) {
 
 	result, err := update.Executor().Exec()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update group"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update group", "details": err.Error()})
 		return
 	}
 
@@ -186,7 +186,7 @@ func DeleteGroup(c *gin.Context) {
 
 	groupID, err := strconv.Atoi(c.Param("group_profile_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID", "details": err.Error()})
 		return
 	}
 
@@ -195,7 +195,7 @@ func DeleteGroup(c *gin.Context) {
 
 	result, err := deleteStmt.Executor().Exec()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete group"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete group", "details": err.Error()})
 		return
 	}
 
@@ -211,7 +211,7 @@ func DeleteGroup(c *gin.Context) {
 func GetGroupUsers(c *gin.Context) {
 	groupID, err := strconv.Atoi(c.Param("group_profile_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID", "details": err.Error()})
 		return
 	}
 
@@ -238,14 +238,14 @@ func GetGroupUsers(c *gin.Context) {
 
 	sql, args, err := query.ToSQL()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to construct query"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to construct query", "details": err.Error()})
 		return
 	}
 
 	var users []models.UserProfile
 	err = initializers.DB.ScanStructs(&users, sql, args...)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch group users"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch group users", "details": err.Error()})
 		return
 	}
 
@@ -263,13 +263,13 @@ func AddUserToGroup(c *gin.Context) {
 
 	groupID, err := strconv.Atoi(c.Param("group_profile_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID", "details": err.Error()})
 		return
 	}
 
 	userID, err := strconv.Atoi(c.Param("user_profile_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user profile ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user profile ID", "details": err.Error()})
 		return
 	}
 
@@ -289,7 +289,7 @@ func AddUserToGroup(c *gin.Context) {
 		).ScanStruct(&existingEntry)
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check existing membership"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check existing membership", "details": err.Error()})
 		return
 	}
 
@@ -313,7 +313,7 @@ func AddUserToGroup(c *gin.Context) {
 	_, err = insert.Executor().Exec()
 	if err != nil {
 		log.Println(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add user to group"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add user to group", "details": err.Error()})
 		return
 	}
 
@@ -326,13 +326,13 @@ func RemoveUserFromGroup(c *gin.Context) {
 
 	groupID, err := strconv.Atoi(c.Param("group_profile_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID", "details": err.Error()})
 		return
 	}
 
 	userID, err := strconv.Atoi(c.Param("user_profile_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user profile ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user profile ID", "details": err.Error()})
 		return
 	}
 
@@ -350,13 +350,13 @@ func RemoveUserFromGroup(c *gin.Context) {
 	result, err := deleteStmt.Executor().Exec()
 	if err != nil {
 		log.Println(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove user from group"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove user from group", "details": err.Error()})
 		return
 	}
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get rows affected"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get rows affected", "details": err.Error()})
 		return
 	}
 
@@ -373,7 +373,7 @@ func GetGroupPrayers(c *gin.Context) {
 
 	groupID, err := strconv.Atoi(c.Param("group_profile_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID", "details": err.Error()})
 		return
 	}
 
@@ -448,7 +448,7 @@ func CreateGroupPrayer(c *gin.Context) {
 
 	groupID, err := strconv.Atoi(c.Param("group_profile_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID", "details": err.Error()})
 		return
 	}
 
@@ -489,7 +489,7 @@ func CreateGroupPrayer(c *gin.Context) {
 	_, err = prayerInsert.Executor().ScanVal(&insertedPrayerID)
 	if err != nil {
 		log.Println(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create prayer record"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create prayer record", "details": err.Error()})
 		return
 	}
 
@@ -509,7 +509,7 @@ func CreateGroupPrayer(c *gin.Context) {
 	_, err = prayerAccessInsert.Executor().ScanVal(&insertedPrayerAccessID)
 	if err != nil {
 		log.Println(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create prayer access record"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create prayer access record", "details": err.Error()})
 		return
 	}
 

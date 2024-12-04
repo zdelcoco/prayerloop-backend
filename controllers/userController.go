@@ -72,7 +72,6 @@ func UserSignup(c *gin.Context) {
 			"user":    user,
 		})
 	}
-
 }
 
 func UserLogin(c *gin.Context) {
@@ -104,7 +103,7 @@ func UserLogin(c *gin.Context) {
 
 	err = bcrypt.CompareHashAndPassword([]byte(dbUser.Password), []byte(user.Password))
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid password"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid password", "details": err.Error()})
 		return
 	}
 
@@ -124,7 +123,7 @@ func UserLogin(c *gin.Context) {
 	token, err := generateToken.SignedString([]byte(os.Getenv("SECRET")))
 
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to generate token"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to generate token", "details": err.Error()})
 	}
 
 	c.JSON(200, gin.H{
@@ -150,7 +149,7 @@ func GetUserGroups(c *gin.Context) {
 
 	userID, err := strconv.Atoi(c.Param("user_profile_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user profile ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user profile ID", "details": err.Error()})
 		return
 	}
 
@@ -185,7 +184,7 @@ func GetUserGroups(c *gin.Context) {
 
 	sql, args, err := query.ToSQL()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to construct query"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to construct query", "details": err.Error()})
 		return
 	}
 
@@ -194,7 +193,7 @@ func GetUserGroups(c *gin.Context) {
 	var groups []models.GroupProfile
 	err = initializers.DB.ScanStructs(&groups, sql, args...)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user groups"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user groups", "details": err.Error()})
 		return
 	}
 
@@ -212,12 +211,12 @@ func GetUserPrayers(c *gin.Context) {
 
 	userID, err := strconv.Atoi(c.Param("user_profile_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user profile ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user profile ID", "details": err.Error()})
 		return
 	}
 
 	if userID != currentUser.User_Profile_ID && !isAdmin {
-		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to view this user's groups"})
+		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to view this user's prayers"})
 		return
 	}
 
@@ -277,7 +276,7 @@ func CreateUserPrayer(c *gin.Context) {
 
 	userID, err := strconv.Atoi(c.Param("user_profile_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user profile ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user profile ID", "details": err.Error()})
 		return
 	}
 
@@ -315,7 +314,7 @@ func CreateUserPrayer(c *gin.Context) {
 	_, err = prayerInsert.Executor().ScanVal(&insertedPrayerID)
 	if err != nil {
 		log.Println(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create prayer record"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create prayer record", "details": err.Error()})
 		return
 	}
 
@@ -335,7 +334,7 @@ func CreateUserPrayer(c *gin.Context) {
 	_, err = prayerAccessInsert.Executor().ScanVal(&insertedPrayerAccessID)
 	if err != nil {
 		log.Println(err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create prayer access record"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create prayer access record", "details": err.Error()})
 		return
 	}
 
