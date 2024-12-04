@@ -442,6 +442,82 @@ func GetGroupPrayers(c *gin.Context) {
 	})
 }
 
+func CreateGroupPrayer(c *gin.Context) {
+	currentUser := c.MustGet("currentUser").(models.UserProfile)
+	isAdmin := c.MustGet("admin").(bool)
+
+	groupID, err := strconv.Atoi(c.Param("group_profile_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID"})
+		return
+	}
+
+	if !isGroupExists(groupID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Group doesn't exist"})
+		return
+	}
+
+	if !isUserInGroup(c, groupID) &&
+		!isAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to create prayers for this group"})
+		return
+	}
+
+	var newPrayer models.PrayerCreate
+	if err := c.BindJSON(&newPrayer); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	newPrayerEntry := models.Prayer{
+		Prayer_Type:        newPrayer.Prayer_Type,
+		Is_Private:         newPrayer.Is_Private,
+		Title:              newPrayer.Title,
+		Prayer_Description: newPrayer.Prayer_Description,
+		Is_Answered:        newPrayer.Is_Answered,
+		Datetime_Answered:  newPrayer.Datetime_Answered,
+		Prayer_Priority:    newPrayer.Prayer_Priority,
+		Created_By:         currentUser.User_Profile_ID,
+		Updated_By:         currentUser.User_Profile_ID,
+		Datetime_Create:    time.Now(),
+		Datetime_Update:    time.Now(),
+	}
+
+	prayerInsert := initializers.DB.Insert("prayer").Rows(newPrayerEntry).Returning("prayer_id")
+
+	var insertedPrayerID int
+	_, err = prayerInsert.Executor().ScanVal(&insertedPrayerID)
+	if err != nil {
+		log.Println(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create prayer record"})
+		return
+	}
+
+	newPrayerAccessEntry := models.PrayerAccess{
+		Prayer_ID:       insertedPrayerID,
+		Access_Type:     "group",
+		Access_Type_ID:  groupID,
+		Created_By:      currentUser.User_Profile_ID,
+		Updated_By:      currentUser.User_Profile_ID,
+		Datetime_Create: time.Now(),
+		Datetime_Update: time.Now(),
+	}
+
+	prayerAccessInsert := initializers.DB.Insert("prayer_access").Rows(newPrayerAccessEntry).Returning("prayer_access_id")
+
+	var insertedPrayerAccessID int
+	_, err = prayerAccessInsert.Executor().ScanVal(&insertedPrayerAccessID)
+	if err != nil {
+		log.Println(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create prayer access record"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"message": "Prayer created sucessfully!",
+		"prayerId":       insertedPrayerID,
+		"prayerAccessId": insertedPrayerAccessID})
+}
+
 func isUserInGroup(c *gin.Context, groupID int) bool {
 	currentUser := c.MustGet("currentUser").(models.UserProfile)
 
