@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -256,9 +257,13 @@ func AddPrayerAccess(c *gin.Context) {
 				Updated_By:     userID,
 			}
 
-			insert := initializers.DB.Insert("prayer_access").Rows(prayerAccessInsert).Executor()
-			if _, err := insert.Exec(); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add prayer access", "details": err.Error()})
+			insert := initializers.DB.Insert("prayer_access").Rows(prayerAccessInsert).Returning("prayer_access_id")
+
+			var insertedPrayerAccessID int
+			_, err = insert.Executor().ScanVal(&insertedPrayerAccessID)
+			if err != nil {
+				log.Println(err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add prayer access record", "details": err.Error()})
 				return
 			}
 
@@ -271,163 +276,115 @@ func AddPrayerAccess(c *gin.Context) {
 
 }
 
-// func CreatePrayerRequest(c *gin.Context) {
+func RemovePrayerAccess(c *gin.Context) {
+	userID := c.MustGet("currentUser").(models.UserProfile).User_Profile_ID
+	admin := c.MustGet("admin").(bool)
 
-// 	user := c.MustGet("currentUser").(models.User)
-// 	admin := c.MustGet("admin").(bool)
+	prayerId, err := strconv.Atoi(c.Param("prayer_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prayer ID", "details": err.Error()})
+		return
+	}
 
-// 	var prayerRequest models.PrayerRequestCreate
-// 	err := c.BindJSON(&prayerRequest)
-// 	if err != nil {
-// 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-// 		return
-// 	}
+	var existingPrayer models.Prayer
+	prayerFound, err := initializers.DB.From("prayer").
+		Where(goqu.C("prayer_id").Eq(prayerId)).
+		ScanStruct(&existingPrayer)
 
-// 	// check if user is trying to create a prayer request for someone else
-// 	if prayerRequest.User_ID != user.User_ID &&
-// 		!admin {
-// 		c.JSON(http.StatusUnauthorized, gin.H{"error": "You are not authorized to create a prayer request for this user."})
-// 		return
-// 	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Prayer record doesn't exist", "details": err.Error()})
+		return
+	}
 
-// 	prayerRequest.User_ID = user.User_ID
+	if !prayerFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Prayer record not found"})
+		return
+	}
 
-// 	insert := initializers.DB.Insert("prayer_request").Rows(prayerRequest).Executor()
+	accessId, err := strconv.Atoi(c.Param("prayer_access_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prayer access ID", "details": err.Error()})
+		return
+	}
 
-// 	result, err := insert.Exec()
-// 	if err != nil {
-// 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-// 		return
-// 	}
+	var existingPrayerAccess models.PrayerAccess
+	accessExists, err := initializers.DB.From("prayer_access").
+		Select(
+			goqu.I("prayer_access.prayer_access_id"),
+			goqu.I("prayer_access.prayer_id"),
+			goqu.I("prayer_access.access_type"),
+			goqu.I("prayer_access.access_type_id"),
+			goqu.I("prayer_access.datetime_create"),
+			goqu.I("prayer_access.datetime_update"),
+			goqu.I("prayer_access.created_by"),
+			goqu.I("prayer_access.updated_by"),
+		).
+		Where(goqu.C("prayer_access_id").Eq(accessId)).
+		ScanStruct(&existingPrayerAccess)
 
-// 	rowsAffected, err := result.RowsAffected()
-// 	if err != nil {
-// 		log.Printf("Error getting rows affected: %v", err)
-// 		return
-// 	}
-// 	if rowsAffected == 0 {
-// 		log.Println("No rows were inserted")
-// 	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch prayer access record", "details": err.Error()})
+		return
+	}
 
-// 	c.JSON(200, gin.H{"message": "Prayer request created successfully."})
+	if !accessExists {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Prayer access record not found"})
+		return
+	}
 
-// }
+	if existingPrayerAccess.Access_Type == "group" {
+		var group models.GroupProfile
+		groupFound, err := initializers.DB.From("group_profile").
+			Where(goqu.C("group_profile_id").Eq(existingPrayerAccess.Access_Type_ID)).
+			ScanStruct(&group)
 
-// func UpdatePrayerRequest(c *gin.Context) {
-// 	user := c.MustGet("currentUser").(models.User)
-// 	admin := c.MustGet("admin").(bool)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch group record", "details": err.Error()})
+			return
+		}
 
-// 	prayerId, err := strconv.Atoi(c.Param("id"))
-// 	if err != nil {
-// 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prayer request ID"})
-// 		return
-// 	}
+		if !groupFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Group record not found"})
+			return
+		}
 
-// 	var existingPrayerRequest models.PrayerRequest
-// 	found, err := initializers.DB.From("prayer_request").
-// 		Where(goqu.C("prayer_request_id").Eq(prayerId)).
-// 		ScanStruct(&existingPrayerRequest)
+		if !isUserInGroup(c, group.Group_Profile_ID) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": fmt.Sprintf("You are not in group %d", group.Group_Profile_ID)})
+			return
+		}
 
-// 	if err != nil {
-// 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch prayer request"})
-// 		return
-// 	}
-// 	if !found {
-// 		c.JSON(http.StatusNotFound, gin.H{"error": "Prayer request not found"})
-// 		return
-// 	}
+		// allow deletion if user is admin, or if user is creator of the prayer, or if user is creator of the group
+		if !admin && (group.Created_By != userID || existingPrayer.Created_By != userID) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "You are not authorized to remove access to this prayer"})
+			return
+		}
 
-// 	if existingPrayerRequest.User_ID != user.User_ID && !admin {
-// 		c.JSON(http.StatusUnauthorized, gin.H{"error": "You are not authorized to update this prayer request"})
-// 		return
-// 	}
+	} else if existingPrayerAccess.Access_Type == "user" {
 
-// 	var updatedPrayerRequest models.PrayerRequestCreate
-// 	if err := c.BindJSON(&updatedPrayerRequest); err != nil {
-// 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-// 		return
-// 	}
+		// allow deletion if user is admin, or if user either created the prayer or is the user to whom access is granted
+		if !admin && (existingPrayer.Created_By != userID || existingPrayerAccess.Access_Type_ID != userID) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "You are not authorized to remove access to this prayer"})
+			return
+		}
+	}
 
-// 	updateRecord := goqu.Record{
-// 		"title":           updatedPrayerRequest.Title,
-// 		"description":     updatedPrayerRequest.Description,
-// 		"is_private":      updatedPrayerRequest.Is_Private,
-// 		"is_answered":     updatedPrayerRequest.Is_Answered,
-// 		"is_ongoing":      updatedPrayerRequest.Is_Ongoing,
-// 		"priority":        updatedPrayerRequest.Priority,
-// 		"updated_by":      user.User_ID,
-// 		"datetime_update": goqu.L("NOW()"),
-// 	}
+	deleteQuery := initializers.DB.Delete("prayer_access").
+		Where(goqu.C("prayer_access_id").Eq(accessId))
 
-// 	// If the prayer request is marked as answered, add the datetime_answered field
-// 	if updatedPrayerRequest.Is_Answered != nil && *updatedPrayerRequest.Is_Answered {
-// 		updateRecord["datetime_answered"] = goqu.L("NOW()")
-// 	} else {
-// 		updateRecord["datetime_answered"] = nil
-// 	}
+	result, err := deleteQuery.Executor().Exec()
 
-// 	update := initializers.DB.Update("prayer_request").
-// 		Set(updateRecord).
-// 		Where(goqu.C("prayer_request_id").Eq(prayerId))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete prayer access record", "details": err.Error()})
+		return
+	}
 
-// 	result, err := update.Executor().Exec()
-// 	if err != nil {
-// 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update prayer request"})
-// 		return
-// 	}
+	rowsAffected, _ := result.RowsAffected()
 
-// 	rowsAffected, _ := result.RowsAffected()
-// 	if rowsAffected == 0 {
-// 		c.JSON(http.StatusInternalServerError, gin.H{"error": "No rows were updated"})
-// 		return
-// 	}
+	if rowsAffected == 0 {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "No rows were deleted"})
+		return
+	}
 
-// 	c.JSON(http.StatusOK, gin.H{"message": "Prayer request updated successfully"})
-// }
+	c.JSON(http.StatusOK, gin.H{"message": "Prayer access removed successfully"})
 
-// func DeletePrayerRequest(c *gin.Context) {
-// 	user := c.MustGet("currentUser").(models.User)
-// 	admin := c.MustGet("admin").(bool)
-
-// 	prayerId, err := strconv.Atoi(c.Param("id"))
-// 	if err != nil {
-// 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prayer request ID"})
-// 		return
-// 	}
-
-// 	var existingPrayerRequest models.PrayerRequest
-// 	found, err := initializers.DB.From("prayer_request").
-// 		Where(goqu.C("prayer_request_id").Eq(prayerId)).
-// 		ScanStruct(&existingPrayerRequest)
-
-// 	if err != nil {
-// 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch prayer request"})
-// 		return
-// 	}
-// 	if !found {
-// 		c.JSON(http.StatusNotFound, gin.H{"error": "Prayer request not found"})
-// 		return
-// 	}
-
-// 	if existingPrayerRequest.User_ID != user.User_ID && !admin {
-// 		c.JSON(http.StatusUnauthorized, gin.H{"error": "You are not authorized to delete this prayer request"})
-// 		return
-// 	}
-
-// 	deleteQuery := initializers.DB.Delete("prayer_request").
-// 		Where(goqu.C("prayer_request_id").Eq(prayerId))
-
-// 	result, err := deleteQuery.Executor().Exec()
-// 	if err != nil {
-// 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete prayer request"})
-// 		return
-// 	}
-
-// 	rowsAffected, _ := result.RowsAffected()
-// 	if rowsAffected == 0 {
-// 		c.JSON(http.StatusInternalServerError, gin.H{"error": "No rows were deleted"})
-// 		return
-// 	}
-
-// 	c.JSON(http.StatusOK, gin.H{"message": "Prayer request deleted successfully"})
-// }
+}
