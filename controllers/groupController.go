@@ -390,15 +390,10 @@ func GetGroupPrayers(c *gin.Context) {
 
 	var userPrayers []models.UserPrayer
 
-	dbErr := initializers.DB.From("prayer_access").
+	dbErr := initializers.DB.From("prayer").
 		Select(
-			goqu.DISTINCT("user_profile_id"),
-			goqu.Case().
-				When(goqu.I("prayer_access.access_type").Eq("user"), goqu.I("prayer_access.access_type_id")).
-				When(goqu.I("prayer_access.access_type").Eq("group"), goqu.I("user_group.user_profile_id")).
-				Else(nil).
-				As("user_profile_id"),
 			goqu.I("prayer.prayer_id"),
+			goqu.I("prayer_access.prayer_access_id"),
 			goqu.I("prayer.prayer_type"),
 			goqu.I("prayer.is_private"),
 			goqu.I("prayer.title"),
@@ -413,22 +408,15 @@ func GetGroupPrayers(c *gin.Context) {
 			goqu.I("prayer.deleted"),
 		).
 		Join(
-			goqu.T("user_group"),
-			goqu.On(
-				goqu.Ex{"prayer_access.access_type": "group", "prayer_access.access_type_id": goqu.I("user_group.group_profile_id")},
-			),
-		).
-		Join(
-			goqu.T("prayer"),
-			goqu.On(goqu.Ex{"prayer_access.prayer_id": goqu.I("prayer.prayer_id")}),
+			goqu.T("prayer_access"),
+			goqu.On(goqu.Ex{"prayer.prayer_id": goqu.I("prayer_access.prayer_id")}),
 		).
 		Where(
 			goqu.And(
-				goqu.Ex{"user_group.group_profile_id": groupID},
-				goqu.Ex{"prayer.deleted": false},
+				goqu.Ex{"prayer_access.access_type": "group"},
+				goqu.Ex{"prayer_access.access_type_id": groupID},
 			),
 		).
-		Order(goqu.I("prayer.prayer_id").Asc()).
 		ScanStructsContext(c, &userPrayers)
 
 	if dbErr != nil {
@@ -441,6 +429,11 @@ func GetGroupPrayers(c *gin.Context) {
 		return
 	}
 
+	/*
+		userProfileId is always 0
+		the client can interpret 0 as meaning its a group prayer and not tied to one user
+		todo -- consider making a separate struct for group prayers
+	*/
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Prayer records retrieved successfully.",
 		"prayers": userPrayers,

@@ -21,6 +21,7 @@ type Prayer struct {
 type UserPrayer struct {
 	User_Profile_ID    int        `json:"userProfileId" goqu:"skipinsert"`
 	Prayer_ID          int        `json:"prayerId" goqu:"skipinsert"`
+	Prayer_Access_ID   int        `json:"prayerAccessId" goqu:"skipinsert"`
 	Prayer_Type        string     `json:"prayerType"`
 	Is_Private         *bool      `json:"isPrivate"`
 	Title              string     `json:"title"`

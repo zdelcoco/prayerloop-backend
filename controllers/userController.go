@@ -227,6 +227,7 @@ func GetUserPrayers(c *gin.Context) {
 			goqu.DISTINCT("user_profile_id"),
 			goqu.I("user_group.user_profile_id").As("user_profile_id"),
 			goqu.I("prayer.prayer_id"),
+			goqu.I("prayer_access.prayer_access_id"),
 			goqu.I("prayer.prayer_type"),
 			goqu.I("prayer.is_private"),
 			goqu.I("prayer.title"),
