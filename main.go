@@ -31,7 +31,9 @@ func main() {
 		auth.GET("/users/:user_profile_id/prayers", controllers.GetUserPrayers)
 		auth.POST("/users/:user_profile_id/prayers", controllers.CreateUserPrayer)
 
+		// notification routes
 		auth.GET("/users/:user_profile_id/notifications", controllers.GetUserNotifications)
+		auth.PATCH("/users/:user_profile_id/notifications/:notification_id", controllers.ToggleUserNotificationStatus)
 
 		// group routes
 		auth.GET("/groups", controllers.GetAllGroups)
