@@ -49,6 +49,9 @@ func main() {
 		auth.POST("/groups/:group_profile_id/users/:user_profile_id", controllers.AddUserToGroup)
 		auth.DELETE("/groups/:group_profile_id/users/:user_profile_id", controllers.RemoveUserFromGroup)
 
+		// group invite
+		auth.POST("/groups/:group_profile_id/invite", controllers.CreateGroupInviteCode)
+
 		// prayer routes
 		auth.PUT("/prayers/:prayer_id", controllers.UpdatePrayer)
 		auth.DELETE("/prayers/:prayer_id", controllers.DeletePrayer)
