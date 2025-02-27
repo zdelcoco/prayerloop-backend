@@ -13,3 +13,7 @@ type GroupInvite struct {
 	Datetime_Expires time.Time `json:"datetimeExpires"`
 	Is_Active        bool      `json:"isActive"`
 }
+
+type JoinRequest struct {
+	Invite_Code string `json:"inviteCode"`
+}
