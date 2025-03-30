@@ -100,45 +100,45 @@ Use a JWT or session token (as configured) in the `Authorization` header for res
 Access the endpoints via `http://localhost:8080` (or whatever host/port you configured). The available endpoints are:
 
 - Endpoints requiring no auth headers
-- `GET /ping`  Health check endpoint.
-- `POST /login`  User login.
+  - `GET /ping`  Health check endpoint.
+  - `POST /login`  User login.
 
 - User endpoints
-- `POST /users`  User signup.
-- `GET /users/me`  Get current user profile.
-- `GET /users/:user_profile_id/groups`  Get groups for a specific user.
-- `GET /users/:user_profile_id/prayers`  Get prayers for a specific user.
-- `POST /users/:user_profile_id/prayers`  Create a prayer for a specific user.
+  - `POST /users`  User signup.
+  - `GET /users/me`  Get current user profile.
+  - `GET /users/:user_profile_id/groups`  Get groups for a specific user.
+  - `GET /users/:user_profile_id/prayers`  Get prayers for a specific user.
+  - `POST /users/:user_profile_id/prayers`  Create a prayer for a specific user.
 
 - Notification endpoints
-- `GET /users/:user_profile_id/notifications`  Get notifications for a specific user.
-- `PATCH /users/:user_profile_id/notifications/:notification_id`  Toggle notification status for a specific user.
+  - `GET /users/:user_profile_id/notifications`  Get notifications for a specific user.
+  - `PATCH /users/:user_profile_id/notifications/:notification_id`  Toggle notification status for a specific user.
 
 - Group endpoints
-- `GET /groups`  Get all groups.
-- `POST /groups`  Create a new group.
-- `GET /groups/:group_profile_id`  Get details for a specific group.
-- `PUT /groups/:group_profile_id`  Update a specific group.
-- `DELETE /groups/:group_profile_id`  Delete a specific group.
-- `GET /groups/:group_profile_id/prayers`  Get prayers for a specific group.
-- `POST /groups/:group_profile_id/prayers`  Create a prayer for a specific group.
-- `GET /groups/:group_profile_id/users`  Get users in a specific group.
-- `POST /groups/:group_profile_id/users/:user_profile_id`  Add a user to a specific group.
-- `DELETE /groups/:group_profile_id/users/:user_profile_id`  Remove a user from a specific group.
+  - `GET /groups`  Get all groups.
+  - `POST /groups`  Create a new group.
+  - `GET /groups/:group_profile_id`  Get details for a specific group.
+  - `PUT /groups/:group_profile_id`  Update a specific group.
+  - `DELETE /groups/:group_profile_id`  Delete a specific group.
+  - `GET /groups/:group_profile_id/prayers`  Get prayers for a specific group.
+  - `POST /groups/:group_profile_id/prayers`  Create a prayer for a specific group.
+  - `GET /groups/:group_profile_id/users`  Get users in a specific group.
+  - `POST /groups/:group_profile_id/users/:user_profile_id`  Add a user to a specific group.
+  - `DELETE /groups/:group_profile_id/users/:user_profile_id`  Remove a user from a specific group.
 
 - Invite endpoints
-- `POST /groups/:group_profile_id/invite`  Create an invite code for a specific group.
-- `POST /groups/:group_profile_id/join`  Join a specific group.
+  - `POST /groups/:group_profile_id/invite`  Create an invite code for a specific group.
+  - `POST /groups/:group_profile_id/join`  Join a specific group.
 
 - Prayer endpoints
-- `PUT /prayers/:prayer_id`  Update a specific prayer.
-- `DELETE /prayers/:prayer_id`  Delete a specific prayer.
-- `POST /prayers/:prayer_id/access`  Add access to a specific prayer.
-- `DELETE /prayers/:prayer_id/access/:prayer_access_id`  Remove access from a specific prayer.
+  - `PUT /prayers/:prayer_id`  Update a specific prayer.
+  - `DELETE /prayers/:prayer_id`  Delete a specific prayer.
+  - `POST /prayers/:prayer_id/access`  Add access to a specific prayer.
+  - `DELETE /prayers/:prayer_id/access/:prayer_access_id`  Remove access from a specific prayer.
 
-- Admin only routes (development/debugging)
-- `GET /prayers`  Get all prayers.
-- `GET /prayers/:prayer_id`  Get details for a specific prayer.
+- Admin only routes (backend use only)
+  - `GET /prayers`  Get all prayers.
+  - `GET /prayers/:prayer_id`  Get details for a specific prayer.
 
 ---
 
