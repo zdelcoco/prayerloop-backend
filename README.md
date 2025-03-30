@@ -109,6 +109,8 @@ Access the endpoints via `http://localhost:8080` (or whatever host/port you conf
     - `GET /users/:user_profile_id/groups`  Get groups for a specific user.
     - `GET /users/:user_profile_id/prayers`  Get prayers for a specific user.
     - `POST /users/:user_profile_id/prayers`  Create a prayer for a specific user.
+    - `GET /users/:user_profile_id/preferences`  Get preferences for a specific user.
+    - `PATCH /users/:user_profile_id/preferences/:preference_id`  Update a preference for a specific user.
 
   - Notification endpoints
     - `GET /users/:user_profile_id/notifications`  Get notifications for a specific user.
