@@ -387,3 +387,123 @@ func GetUserPreferences(c *gin.Context) {
 		"preferences": preferences,
 	})
 }
+
+func UpdateUserPreferences(c *gin.Context) {
+	currentUser := c.MustGet("currentUser").(models.UserProfile)
+	isAdmin := c.MustGet("admin").(bool)
+
+	userID, err := strconv.Atoi(c.Param("user_profile_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user profile ID", "details": err.Error()})
+		return
+	}
+
+	if userID != currentUser.User_Profile_ID && !isAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to update this user's preferences"})
+		return
+	}
+
+	preferenceID, err := strconv.Atoi(c.Param("preference_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user preferences ID", "details": err.Error()})
+		return
+	}
+
+	var updatedPreference models.UserPreferencesUpdate
+	if err := c.BindJSON(&updatedPreference); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var currentPreference []models.UserPreferences
+
+	dbErr := initializers.DB.From("user_preferences").
+		Select("*").
+		Where(goqu.C("user_preferences_id").Eq(preferenceID)).
+		ScanStructsContext(c, &currentPreference)
+
+	if dbErr != nil {
+		c.JSON(500, gin.H{"error": dbErr.Error()})
+		return
+	}
+
+	if len(currentPreference) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "No preferences found for this user with the given preference ID"})
+		return
+	}
+
+	// Check if the current user is the owner of the preference or if the user is an admin
+	if currentPreference[0].User_Profile_ID != userID && !isAdmin {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": fmt.Sprintf("User ID mismatch: user ID %d does not match the owner of preference ID %d",
+				userID,
+				preferenceID),
+		})
+		return
+	}
+
+	// Check if the preference key in the request matches the existing record
+	if currentPreference[0].Preference_Key != updatedPreference.Preference_Key {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Preference key mismatch: existing key is '%s', but provided key is '%s'",
+				currentPreference[0].Preference_Key,
+				updatedPreference.Preference_Key),
+		})
+		return
+	}
+
+	if currentPreference[0].Preference_Key == updatedPreference.Preference_Key &&
+		currentPreference[0].Preference_Value == updatedPreference.Preference_Value &&
+		currentPreference[0].Is_Active == updatedPreference.Is_Active {
+		c.JSON(http.StatusOK, gin.H{
+			"message":    "No changes detected in the user preferences. No update performed.",
+			"preference": currentPreference[0],
+		})
+		return
+	}
+
+	if updatedPreference.Preference_Key == "notifications" &&
+		updatedPreference.Preference_Value != "true" &&
+		updatedPreference.Preference_Value != "false" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Invalid value for preference key 'notification'. Allowed values are 'true' or 'false', but received '%s'",
+				updatedPreference.Preference_Value),
+		})
+		return
+	}
+
+	if updatedPreference.Preference_Key == "theme" &&
+		updatedPreference.Preference_Value != "light" &&
+		updatedPreference.Preference_Value != "dark" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Invalid value for preference key 'theme'. Allowed values are 'light' or 'dark', but received '%s'",
+				updatedPreference.Preference_Value),
+		})
+		return
+	}
+
+	update := initializers.DB.Update("user_preferences").
+		Set(goqu.Record{
+			"preference_value": updatedPreference.Preference_Value,
+			"is_active":        updatedPreference.Is_Active,
+			"datetime_update":  time.Now(),
+		}).
+		Where(goqu.C("user_preferences_id").Eq(preferenceID))
+
+	result, err := update.Executor().Exec()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user preferences", "details": err.Error()})
+		return
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"message": "No preference found to update"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":    "User preferences updated successfully.",
+		"preference": updatedPreference,
+	})
+}
