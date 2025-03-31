@@ -1,56 +1,55 @@
-# EC2 instance temporarily stopped, so removing the deploy step for now
-# name: Deploy to EC2
+name: Deploy to EC2
 
-# on:
-#   push:
-#     branches:
-#       - main
+on:
+  push:
+    branches:
+      - main
 
-# jobs:
-#   build:
-#     runs-on: ubuntu-latest
+jobs:
+  build:
+    runs-on: ubuntu-latest
 
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v2
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
 
-#       - name: Create .env file from secret
-#         run: |
-#           echo "${{ secrets.ENV_FILE }}" > .env
+      - name: Create .env file from secret
+        run: |
+          echo "${{ secrets.ENV_FILE }}" > .env
 
-#       - name: Set up Docker Buildx
-#         uses: docker/setup-buildx-action@v1
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
 
-#       - name: Log in to Docker Hub (optional)
-#         uses: docker/login-action@v1
-#         with:
-#           username: ${{ secrets.DOCKER_USERNAME }}
-#           password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Log in to Docker Hub (optional)
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-#       - name: Build and push Docker image
-#         uses: docker/build-push-action@v3
-#         with:
-#           context: .
-#           push: true
-#           tags: ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }}
 
-#       - name: Deploy to EC2
-#         env:
-#           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-#           ENV_FILE: ${{ secrets.ENV_FILE }}
-#         run: |
-#           echo "$EC2_SSH_KEY" > ec2_key.pem
-#           chmod 600 ec2_key.pem
+      - name: Deploy to EC2
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          ENV_FILE: ${{ secrets.ENV_FILE }}
+        run: |
+          echo "$EC2_SSH_KEY" > ec2_key.pem
+          chmod 600 ec2_key.pem
 
-#           ssh -o StrictHostKeyChecking=no -i ec2_key.pem ec2-user@${{ secrets.EC2_PUBLIC_IP }} "
+          ssh -o StrictHostKeyChecking=no -i ec2_key.pem ec2-user@${{ secrets.EC2_PUBLIC_IP }} "
 
-#           # Create .env file from passed environment variable (currently not used)
-#           echo '$ENV_FILE' > .env &&
+          # Create .env file from passed environment variable (currently not used)
+          echo '$ENV_FILE' > .env &&
 
-#           # Stop the currently running container if it exists
-#           if [ \"\$(docker ps --filter \"status=running\" | grep -i ${{ secrets.DOCKER_USERNAME }}/myapp)\" ]; then 
-#             docker stop \$(docker ps --filter \"status=running\" | grep -i ${{ secrets.DOCKER_USERNAME }}/myapp | cut -d\" \" -f1); 
-#           fi && 
+          # Stop the currently running container if it exists
+          if [ \"\$(docker ps --filter \"status=running\" | grep -i ${{ secrets.DOCKER_USERNAME }}/myapp)\" ]; then 
+            docker stop \$(docker ps --filter \"status=running\" | grep -i ${{ secrets.DOCKER_USERNAME }}/myapp | cut -d\" \" -f1); 
+          fi && 
 
-#           docker pull ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} && 
-#           docker run -d -p ${{ vars.PORT }}:${{ vars.PORT }} ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }}"
+          docker pull ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} && 
+          docker run -d -p ${{ vars.PORT }}:${{ vars.PORT }} ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }}"
