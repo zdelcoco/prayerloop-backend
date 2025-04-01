@@ -1,4 +1,3 @@
-# This is a GitHub Actions workflow file for deploying a Dockerized application to an EC2 instance.
 name: Deploy to EC2
 
 on:
