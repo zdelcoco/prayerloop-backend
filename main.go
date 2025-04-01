@@ -16,11 +16,19 @@ func init() {
 func main() {
 	router := gin.Default()
 
-	router.GET("/ping", controllers.Ping)
-	router.POST("/login", controllers.UserLogin)
+	getKey := func(c *gin.Context) string {
+		if gin.Mode() == gin.DebugMode {
+			return c.FullPath()
+		}
+		return c.ClientIP()
+	}
+
+	router.POST("/login", middlewares.RateLimitMiddleware(2, 2, getKey), controllers.UserLogin)
+	router.GET("/ping", middlewares.RateLimitMiddleware(2, 2, getKey), controllers.Ping)
 
 	auth := router.Group("/")
 	auth.Use(middlewares.CheckAuth)
+	auth.Use(middlewares.RateLimitMiddleware(10, 10, getKey))
 	{
 		// User signup route is currently only available to admins
 		auth.POST("/users", controllers.UserSignup)
@@ -65,6 +73,7 @@ func main() {
 		//admin only routes
 		admin := auth.Group("/")
 		admin.Use(middlewares.CheckAdmin)
+		admin.Use(middlewares.RateLimitMiddleware(5, 5, getKey))
 		{
 			admin.GET("/prayers", controllers.GetPrayers)
 			admin.GET("/prayers/:prayer_id", controllers.GetPrayer)
