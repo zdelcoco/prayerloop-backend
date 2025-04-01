@@ -48,8 +48,8 @@ jobs:
 
           # Stop the currently running container if it exists
           if [ \"\$(docker ps --filter \"status=running\" | grep -i ${{ secrets.DOCKER_USERNAME }}/myapp)\" ]; then 
-            docker stop \$(docker ps --filter \"status=running\" | grep -i ${{ secrets.DOCKER_USERNAME }}/myapp | cut -d\" \" -f1); 
+            sudo docker stop \$(docker ps --filter \"status=running\" | grep -i ${{ secrets.DOCKER_USERNAME }}/myapp | cut -d\" \" -f1); 
           fi && 
 
-          docker pull ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} && 
-          docker run -d -p ${{ vars.PORT }}:${{ vars.PORT }} ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }}"
+          sudo docker pull ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }} && 
+          sudo docker run -d -p ${{ vars.PORT }}:${{ vars.PORT }} ${{ secrets.DOCKER_USERNAME }}/myapp:${{ github.sha }}"
