@@ -16,13 +16,6 @@ import (
 
 func CreateGroup(c *gin.Context) {
 	user := c.MustGet("currentUser").(models.UserProfile)
-	admin := c.MustGet("admin").(bool)
-
-	// only admins for now
-	if !admin {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Only admins can create groups"})
-		return
-	}
 
 	var newGroup models.GroupCreate
 	if err := c.BindJSON(&newGroup); err != nil {
@@ -40,10 +33,10 @@ func CreateGroup(c *gin.Context) {
 		Datetime_Update:   time.Now(),
 	}
 
-	insert := initializers.DB.Insert("group_profile").Rows(group).Returning("group_profile_id")
+	groupInsert := initializers.DB.Insert("group_profile").Rows(group).Returning("group_profile_id")
 
 	var insertedID int
-	_, err := insert.Executor().ScanVal(&insertedID)
+	_, err := groupInsert.Executor().ScanVal(&insertedID)
 	if err != nil {
 		log.Println(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create group", "details": err.Error()})
@@ -51,6 +44,25 @@ func CreateGroup(c *gin.Context) {
 	}
 
 	group.Group_Profile_ID = insertedID
+
+	newEntry := models.UserGroup{
+		User_Profile_ID:  user.User_Profile_ID,
+		Group_Profile_ID: group.Group_Profile_ID,
+		Is_Active:        true,
+		Created_By:       user.User_Profile_ID,
+		Updated_By:       user.User_Profile_ID,
+		Datetime_Create:  time.Now(),
+		Datetime_Update:  time.Now(),
+	}
+
+	userGroupInsert := initializers.DB.Insert("user_group").Rows(newEntry)
+
+	_, err = userGroupInsert.Executor().Exec()
+	if err != nil {
+		log.Println(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add user to group", "details": err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusCreated, group)
 }
