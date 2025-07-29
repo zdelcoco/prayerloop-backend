@@ -25,6 +25,7 @@ func main() {
 
 	router.POST("/login", middlewares.RateLimitMiddleware(2, 2, getKey), controllers.UserLogin)
 	router.POST("/signup", middlewares.RateLimitMiddleware(2, 2, getKey), controllers.PublicUserSignup)
+	router.GET("/check-username", middlewares.RateLimitMiddleware(5, 5, getKey), controllers.CheckUsernameAvailability)
 	router.GET("/ping", middlewares.RateLimitMiddleware(2, 2, getKey), controllers.Ping)
 
 	auth := router.Group("/")

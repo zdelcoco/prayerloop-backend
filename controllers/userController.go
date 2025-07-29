@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"os"
 	"time"
@@ -26,6 +27,35 @@ func PublicUserSignup(c *gin.Context) {
 		return
 	}
 
+	// Validate required fields
+	var missingFields []string
+	if user.Username == "" {
+		missingFields = append(missingFields, "username")
+	}
+	if user.Password == "" {
+		missingFields = append(missingFields, "password")
+	}
+	if user.Email == "" {
+		missingFields = append(missingFields, "email")
+	}
+	if user.First_Name == "" {
+		missingFields = append(missingFields, "firstName")
+	}
+	if user.Last_Name == "" {
+		missingFields = append(missingFields, "lastName")
+	}
+
+	if len(missingFields) > 0 {
+		var errorMsg string
+		if len(missingFields) == 1 {
+			errorMsg = fmt.Sprintf("The following field is required: %s", missingFields[0])
+		} else {
+			errorMsg = fmt.Sprintf("The following fields are required: %s", strings.Join(missingFields, ", "))
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": errorMsg})
+		return
+	}
+
 	// Check if username already exists
 	userCount, err := initializers.DB.From("user_profile").Select("username").Where(goqu.C("username").Eq(user.Username)).Count()
 	if err != nil {
@@ -38,18 +68,16 @@ func PublicUserSignup(c *gin.Context) {
 		return
 	}
 
-	// Check if email already exists (if provided)
-	if user.Email != "" {
-		emailCount, err := initializers.DB.From("user_profile").Select("email").Where(goqu.C("email").Eq(user.Email)).Count()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
+	// Check if email already exists
+	emailCount, err := initializers.DB.From("user_profile").Select("email").Where(goqu.C("email").Eq(user.Email)).Count()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
-		if emailCount > 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "email already exists."})
-			return
-		}
+	if emailCount > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "email already exists."})
+		return
 	}
 
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
@@ -150,6 +178,26 @@ func UserSignup(c *gin.Context) {
 			"user":    user,
 		})
 	}
+}
+
+func CheckUsernameAvailability(c *gin.Context) {
+	username := c.Query("username")
+	
+	if username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "username parameter is required"})
+		return
+	}
+
+	userCount, err := initializers.DB.From("user_profile").Select("username").Where(goqu.C("username").Eq(username)).Count()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"username": username,
+		"available": userCount == 0,
+	})
 }
 
 func UserLogin(c *gin.Context) {
