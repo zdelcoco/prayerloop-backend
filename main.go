@@ -24,13 +24,14 @@ func main() {
 	}
 
 	router.POST("/login", middlewares.RateLimitMiddleware(2, 2, getKey), controllers.UserLogin)
+	router.POST("/signup", middlewares.RateLimitMiddleware(2, 2, getKey), controllers.PublicUserSignup)
 	router.GET("/ping", middlewares.RateLimitMiddleware(2, 2, getKey), controllers.Ping)
 
 	auth := router.Group("/")
 	auth.Use(middlewares.CheckAuth)
 	auth.Use(middlewares.RateLimitMiddleware(10, 10, getKey))
 	{
-		// User signup route is currently only available to admins
+		// Admin-only user creation endpoint
 		auth.POST("/users", controllers.UserSignup)
 
 		auth.GET("/users/me", controllers.GetUserProfile)

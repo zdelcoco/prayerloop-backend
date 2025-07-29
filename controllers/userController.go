@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	"os"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -19,14 +18,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func UserSignup(c *gin.Context) {
-	admin := c.MustGet("admin")
-
-	if admin != true {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "must be logged in as an admin to create a user."})
-		return
-	}
-
+func PublicUserSignup(c *gin.Context) {
 	var user models.UserProfileSignup
 
 	if err := c.ShouldBindJSON(&user); err != nil {
@@ -34,6 +26,7 @@ func UserSignup(c *gin.Context) {
 		return
 	}
 
+	// Check if username already exists
 	userCount, err := initializers.DB.From("user_profile").Select("username").Where(goqu.C("username").Eq(user.Username)).Count()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -45,6 +38,20 @@ func UserSignup(c *gin.Context) {
 		return
 	}
 
+	// Check if email already exists (if provided)
+	if user.Email != "" {
+		emailCount, err := initializers.DB.From("user_profile").Select("email").Where(goqu.C("email").Eq(user.Email)).Count()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		if emailCount > 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "email already exists."})
+			return
+		}
+	}
+
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -52,13 +59,84 @@ func UserSignup(c *gin.Context) {
 	}
 
 	newUser := models.UserProfile{
-		Username:   user.Username,
-		Password:   string(passwordHash),
-		Email:      user.Email,
-		First_Name: user.First_Name,
-		Last_Name:  user.Last_Name,
-		Created_By: 1,
-		Updated_By: 1,
+		Username:     user.Username,
+		Password:     string(passwordHash),
+		Email:        user.Email,
+		First_Name:   user.First_Name,
+		Last_Name:    user.Last_Name,
+		Phone_Number: user.Phone_Number,
+		Created_By:   1,
+		Updated_By:   1,
+	}
+
+	insert := initializers.DB.Insert("user_profile").Rows(newUser).Executor()
+	if _, err := insert.Exec(); err != nil {
+		log.Default().Println(insert)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	} else {
+		c.JSON(200, gin.H{
+			"message": "User created successfully.",
+			"user":    user,
+		})
+	}
+}
+
+func UserSignup(c *gin.Context) {
+	admin := c.MustGet("admin")
+
+	if admin != true {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "must be logged in as an admin to create a user."})
+		return
+	}
+	var user models.UserProfileSignup
+
+	if err := c.ShouldBindJSON(&user); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Check if username already exists
+	userCount, err := initializers.DB.From("user_profile").Select("username").Where(goqu.C("username").Eq(user.Username)).Count()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if userCount > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "username already exists."})
+		return
+	}
+
+	// Check if email already exists (if provided)
+	if user.Email != "" {
+		emailCount, err := initializers.DB.From("user_profile").Select("email").Where(goqu.C("email").Eq(user.Email)).Count()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		if emailCount > 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "email already exists."})
+			return
+		}
+	}
+
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	newUser := models.UserProfile{
+		Username:     user.Username,
+		Password:     string(passwordHash),
+		Email:        user.Email,
+		First_Name:   user.First_Name,
+		Last_Name:    user.Last_Name,
+		Phone_Number: user.Phone_Number,
+		Created_By:   1,
+		Updated_By:   1,
 	}
 
 	insert := initializers.DB.Insert("user_profile").Rows(newUser).Executor()
@@ -108,7 +186,7 @@ func UserLogin(c *gin.Context) {
 	}
 
 	role := ""
-	if strings.HasPrefix(dbUser.Username, "admin") {
+	if dbUser.Admin {
 		role = "admin"
 	} else {
 		role = "user"
