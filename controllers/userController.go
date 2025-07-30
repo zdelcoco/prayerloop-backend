@@ -362,8 +362,7 @@ func GetUserPrayers(c *gin.Context) {
 
 	dbErr := initializers.DB.From("prayer_access").
 		Select(
-			goqu.DISTINCT("user_profile_id"),
-			goqu.I("user_group.user_profile_id").As("user_profile_id"),
+			goqu.L("?", currentUser.User_Profile_ID).As("user_profile_id"),
 			goqu.I("prayer.prayer_id"),
 			goqu.I("prayer_access.prayer_access_id"),
 			goqu.I("prayer.prayer_type"),
@@ -380,18 +379,13 @@ func GetUserPrayers(c *gin.Context) {
 			goqu.I("prayer.deleted"),
 		).
 		Join(
-			goqu.T("user_group"),
-			goqu.On(
-				goqu.Ex{"prayer_access.access_type": "user", "prayer_access.access_type_id": goqu.I("user_group.user_profile_id")},
-			),
-		).
-		Join(
 			goqu.T("prayer"),
 			goqu.On(goqu.Ex{"prayer_access.prayer_id": goqu.I("prayer.prayer_id")}),
 		).
 		Where(
 			goqu.And(
-				goqu.Ex{"user_group.user_profile_id": currentUser.User_Profile_ID},
+				goqu.Ex{"prayer_access.access_type": "user"},
+				goqu.Ex{"prayer_access.access_type_id": currentUser.User_Profile_ID},
 				goqu.Ex{"prayer.deleted": false},
 			),
 		).
