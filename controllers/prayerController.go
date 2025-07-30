@@ -374,8 +374,47 @@ func RemovePrayerAccess(c *gin.Context) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "You are not authorized to remove access to this prayer"})
 			return
 		}
+
+		// When user is deleting their own prayer (access_type = "user"), delete ALL prayer_access records
+		// and then delete the prayer itself
+		if existingPrayerAccess.Access_Type_ID == userID && existingPrayer.Created_By == userID {
+			// First, delete all prayer_access records for this prayer
+			deleteAllAccessQuery := initializers.DB.Delete("prayer_access").
+				Where(goqu.C("prayer_id").Eq(prayerId))
+
+			_, err := deleteAllAccessQuery.Executor().Exec()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete all prayer access records", "details": err.Error()})
+				return
+			}
+
+			// Then, mark the prayer as deleted
+			deletePrayerQuery := initializers.DB.Update("prayer").
+				Set(goqu.Record{
+					"deleted": true,
+					"updated_by": userID,
+					"datetime_update": goqu.L("NOW()"),
+				}).
+				Where(goqu.C("prayer_id").Eq(prayerId))
+
+			result, err := deletePrayerQuery.Executor().Exec()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete prayer", "details": err.Error()})
+				return
+			}
+
+			rowsAffected, _ := result.RowsAffected()
+			if rowsAffected == 0 {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "No prayer rows were deleted"})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{"message": "Prayer and all access records removed successfully"})
+			return
+		}
 	}
 
+	// Default behavior: delete only the specific prayer_access record (for group deletions or other cases)
 	deleteQuery := initializers.DB.Delete("prayer_access").
 		Where(goqu.C("prayer_access_id").Eq(accessId))
 
