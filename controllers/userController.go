@@ -505,7 +505,7 @@ func GetUserPreferencesWithDefaults(c *gin.Context) {
 	// First, get all default preferences
 	var defaultPrefs []models.Preference
 	dbErr := initializers.DB.From("preference").
-		Select("preference_key", "default_value", "description", "value_type").
+		Select("preference_id", "preference_key", "default_value", "description", "value_type").
 		Where(goqu.C("is_active").IsTrue()).
 		Order(goqu.C("preference_key").Asc()).
 		ScanStructsContext(c, &defaultPrefs)
@@ -545,11 +545,12 @@ func GetUserPreferencesWithDefaults(c *gin.Context) {
 		}
 
 		responsePrefs = append(responsePrefs, map[string]interface{}{
-			"key":         defaultPref.Preference_Key,
-			"value":       prefValue,
-			"description": defaultPref.Description,
-			"valueType":   defaultPref.Value_Type,
-			"isDefault":   isDefault,
+			"preferenceId": defaultPref.Preference_ID,
+			"key":          defaultPref.Preference_Key,
+			"value":        prefValue,
+			"description":  defaultPref.Description,
+			"valueType":    defaultPref.Value_Type,
+			"isDefault":    isDefault,
 		})
 	}
 
@@ -615,7 +616,7 @@ func UpdateUserPreferences(c *gin.Context) {
 
 	preferenceID, err := strconv.Atoi(c.Param("preference_id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user preferences ID", "details": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid preference ID", "details": err.Error()})
 		return
 	}
 
@@ -625,58 +626,57 @@ func UpdateUserPreferences(c *gin.Context) {
 		return
 	}
 
-	var currentPreference []models.UserPreferences
-
-	dbErr := initializers.DB.From("user_preferences").
+	// First, verify the preference_id exists in the preference table
+	var preference []models.Preference
+	dbErr := initializers.DB.From("preference").
 		Select("*").
-		Where(goqu.C("user_preferences_id").Eq(preferenceID)).
-		ScanStructsContext(c, &currentPreference)
+		Where(goqu.C("preference_id").Eq(preferenceID)).
+		ScanStructsContext(c, &preference)
 
 	if dbErr != nil {
-		c.JSON(500, gin.H{"error": dbErr.Error()})
+		c.JSON(500, gin.H{"error": "Failed to verify preference", "details": dbErr.Error()})
 		return
 	}
 
-	if len(currentPreference) == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "No preferences found for this user with the given preference ID"})
+	if len(preference) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Preference not found"})
 		return
 	}
 
-	// Check if the current user is the owner of the preference or if the user is an admin
-	if currentPreference[0].User_Profile_ID != userID && !isAdmin {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": fmt.Sprintf("User ID mismatch: user ID %d does not match the owner of preference ID %d",
-				userID,
-				preferenceID),
-		})
-		return
-	}
+	basePreference := preference[0]
 
-	// Check if the preference key in the request matches the existing record
-	if currentPreference[0].Preference_Key != updatedPreference.Preference_Key {
+	// Validate that the preference key matches
+	if basePreference.Preference_Key != updatedPreference.Preference_Key {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": fmt.Sprintf("Preference key mismatch: existing key is '%s', but provided key is '%s'",
-				currentPreference[0].Preference_Key,
+			"error": fmt.Sprintf("Preference key mismatch: expected '%s', but received '%s'",
+				basePreference.Preference_Key,
 				updatedPreference.Preference_Key),
 		})
 		return
 	}
 
-	if currentPreference[0].Preference_Key == updatedPreference.Preference_Key &&
-		currentPreference[0].Preference_Value == updatedPreference.Preference_Value &&
-		currentPreference[0].Is_Active == updatedPreference.Is_Active {
-		c.JSON(http.StatusOK, gin.H{
-			"message":    "No changes detected in the user preferences. No update performed.",
-			"preference": currentPreference[0],
-		})
+	// Check if user already has a custom preference for this preference_id
+	var existingUserPrefs []models.UserPreferences
+	dbErr = initializers.DB.From("user_preferences").
+		Select("*").
+		Where(goqu.And(
+			goqu.C("user_profile_id").Eq(userID),
+			goqu.C("preference_key").Eq(basePreference.Preference_Key),
+		)).
+		ScanStructsContext(c, &existingUserPrefs)
+
+	if dbErr != nil {
+		c.JSON(500, gin.H{"error": "Failed to check existing user preferences", "details": dbErr.Error()})
 		return
 	}
 
-	if updatedPreference.Preference_Key == "notifications" &&
+	// Perform validation based on preference type
+	if basePreference.Value_Type == "boolean" &&
 		updatedPreference.Preference_Value != "true" &&
 		updatedPreference.Preference_Value != "false" {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": fmt.Sprintf("Invalid value for preference key 'notification'. Allowed values are 'true' or 'false', but received '%s'",
+			"error": fmt.Sprintf("Invalid value for boolean preference '%s'. Allowed values are 'true' or 'false', but received '%s'",
+				basePreference.Preference_Key,
 				updatedPreference.Preference_Value),
 		})
 		return
@@ -692,28 +692,66 @@ func UpdateUserPreferences(c *gin.Context) {
 		return
 	}
 
-	update := initializers.DB.Update("user_preferences").
-		Set(goqu.Record{
-			"preference_value": updatedPreference.Preference_Value,
-			"is_active":        updatedPreference.Is_Active,
-			"datetime_update":  time.Now(),
-		}).
-		Where(goqu.C("user_preferences_id").Eq(preferenceID))
+	// Check if this would be a no-op (same value)
+	if len(existingUserPrefs) > 0 {
+		existing := existingUserPrefs[0]
+		if existing.Preference_Value == updatedPreference.Preference_Value &&
+			existing.Is_Active == updatedPreference.Is_Active {
+			c.JSON(http.StatusOK, gin.H{
+				"message": "No changes detected in the user preferences. No update performed.",
+				"preference": map[string]interface{}{
+					"preferenceId": basePreference.Preference_ID,
+					"key":          basePreference.Preference_Key,
+					"value":        existing.Preference_Value,
+					"description":  basePreference.Description,
+					"valueType":    basePreference.Value_Type,
+					"isDefault":    false,
+				},
+			})
+			return
+		}
 
-	result, err := update.Executor().Exec()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user preferences", "details": err.Error()})
-		return
-	}
+		// Update existing user preference
+		update := initializers.DB.Update("user_preferences").
+			Set(goqu.Record{
+				"preference_value": updatedPreference.Preference_Value,
+				"is_active":        updatedPreference.Is_Active,
+				"datetime_update":  time.Now(),
+			}).
+			Where(goqu.C("user_preferences_id").Eq(existing.User_Preferences_ID))
 
-	rowsAffected, _ := result.RowsAffected()
-	if rowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"message": "No preference found to update"})
-		return
+		_, err := update.Executor().Exec()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user preferences", "details": err.Error()})
+			return
+		}
+	} else {
+		// Insert new user preference
+		newUserPref := models.UserPreferences{
+			User_Profile_ID:  userID,
+			Preference_Key:   basePreference.Preference_Key,
+			Preference_Value: updatedPreference.Preference_Value,
+			Is_Active:        updatedPreference.Is_Active,
+			Datetime_Create:  time.Now(),
+			Datetime_Update:  time.Now(),
+		}
+
+		insert := initializers.DB.Insert("user_preferences").Rows(newUserPref).Executor()
+		if _, err := insert.Exec(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user preference", "details": err.Error()})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":    "User preferences updated successfully.",
-		"preference": updatedPreference,
+		"message": "User preferences updated successfully.",
+		"preference": map[string]interface{}{
+			"preferenceId": basePreference.Preference_ID,
+			"key":          basePreference.Preference_Key,
+			"value":        updatedPreference.Preference_Value,
+			"description":  basePreference.Description,
+			"valueType":    basePreference.Value_Type,
+			"isDefault":    false,
+		},
 	})
 }
