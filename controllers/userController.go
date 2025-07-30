@@ -86,13 +86,19 @@ func PublicUserSignup(c *gin.Context) {
 		return
 	}
 
+	// Handle phone number - convert to pointer for nullable field
+	var phoneNumber *string
+	if user.Phone_Number != "" {
+		phoneNumber = &user.Phone_Number
+	}
+
 	newUser := models.UserProfile{
 		Username:     user.Username,
 		Password:     string(passwordHash),
 		Email:        user.Email,
 		First_Name:   user.First_Name,
 		Last_Name:    user.Last_Name,
-		Phone_Number: user.Phone_Number,
+		Phone_Number: phoneNumber,
 		Created_By:   1,
 		Updated_By:   1,
 	}
@@ -156,13 +162,19 @@ func UserSignup(c *gin.Context) {
 		return
 	}
 
+	// Handle phone number - convert to pointer for nullable field
+	var phoneNumber *string
+	if user.Phone_Number != "" {
+		phoneNumber = &user.Phone_Number
+	}
+
 	newUser := models.UserProfile{
 		Username:     user.Username,
 		Password:     string(passwordHash),
 		Email:        user.Email,
 		First_Name:   user.First_Name,
 		Last_Name:    user.Last_Name,
-		Phone_Number: user.Phone_Number,
+		Phone_Number: phoneNumber,
 		Created_By:   1,
 		Updated_By:   1,
 	}
@@ -182,7 +194,7 @@ func UserSignup(c *gin.Context) {
 
 func CheckUsernameAvailability(c *gin.Context) {
 	username := c.Query("username")
-	
+
 	if username == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "username parameter is required"})
 		return
@@ -195,7 +207,7 @@ func CheckUsernameAvailability(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"username": username,
+		"username":  username,
 		"available": userCount == 0,
 	})
 }
@@ -473,6 +485,78 @@ func CreateUserPrayer(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"message": "Prayer created sucessfully!",
 		"prayerId":       insertedPrayerID,
 		"prayerAccessId": insertedPrayerAccessID})
+}
+
+func GetUserPreferencesWithDefaults(c *gin.Context) {
+	currentUser := c.MustGet("currentUser").(models.UserProfile)
+	isAdmin := c.MustGet("admin").(bool)
+
+	userID, err := strconv.Atoi(c.Param("user_profile_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user profile ID", "details": err.Error()})
+		return
+	}
+
+	if userID != currentUser.User_Profile_ID && !isAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to view this user's preferences"})
+		return
+	}
+
+	// First, get all default preferences
+	var defaultPrefs []models.Preference
+	dbErr := initializers.DB.From("preference").
+		Select("preference_key", "default_value", "description", "value_type").
+		Where(goqu.C("is_active").IsTrue()).
+		Order(goqu.C("preference_key").Asc()).
+		ScanStructsContext(c, &defaultPrefs)
+
+	if dbErr != nil {
+		c.JSON(500, gin.H{"error": "Failed to load default preferences", "details": dbErr.Error()})
+		return
+	}
+
+	// Then, get user's custom preferences
+	var userPrefs []models.UserPreferences
+	dbErr = initializers.DB.From("user_preferences").
+		Select("preference_key", "preference_value").
+		Where(goqu.C("user_profile_id").Eq(userID)).
+		ScanStructsContext(c, &userPrefs)
+
+	if dbErr != nil {
+		c.JSON(500, gin.H{"error": "Failed to load user preferences", "details": dbErr.Error()})
+		return
+	}
+
+	// Create a map of user preferences for quick lookup
+	userPrefMap := make(map[string]string)
+	for _, pref := range userPrefs {
+		userPrefMap[pref.Preference_Key] = pref.Preference_Value
+	}
+
+	// Build the response with defaults overridden by user preferences
+	var responsePrefs []map[string]interface{}
+	for _, defaultPref := range defaultPrefs {
+		prefValue := defaultPref.Default_Value
+		isDefault := true
+
+		if userValue, exists := userPrefMap[defaultPref.Preference_Key]; exists {
+			prefValue = userValue
+			isDefault = false
+		}
+
+		responsePrefs = append(responsePrefs, map[string]interface{}{
+			"key":         defaultPref.Preference_Key,
+			"value":       prefValue,
+			"description": defaultPref.Description,
+			"valueType":   defaultPref.Value_Type,
+			"isDefault":   isDefault,
+		})
+	}
+
+	c.JSON(200, gin.H{
+		"message":     "User preferences retrieved successfully.",
+		"preferences": responsePrefs,
+	})
 }
 
 func GetUserPreferences(c *gin.Context) {

@@ -9,10 +9,10 @@ type UserProfile struct {
 	Email                string    `json:"email"`
 	First_Name           string    `json:"firstName"`
 	Last_Name            string    `json:"lastName"`
-	Phone_Number         string    `json:"phoneNumber"`
+	Phone_Number         *string   `json:"phoneNumber"`
 	Email_Verified       bool      `json:"emailVerified" goqu:"skipinsert"`
 	Phone_Verified       bool      `json:"phoneVerified" goqu:"skipinsert"`
-	Verification_Token   string    `json:"-"`
+	Verification_Token   *string   `json:"-"`
 	Admin                bool      `json:"admin" goqu:"skipinsert"`
 	Created_By           int       `json:"createdBy"`
 	Datetime_Create      time.Time `json:"datetimeCreate" goqu:"skipinsert"`

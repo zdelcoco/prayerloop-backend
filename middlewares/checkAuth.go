@@ -59,7 +59,12 @@ func CheckAuth(c *gin.Context) {
 	}
 
 	var user models.UserProfile
-	initializers.DB.From("user_profile").Select("*").Where(goqu.C("user_profile_id").Eq(claims["id"])).ScanStruct(&user)
+	_, err = initializers.DB.From("user_profile").Select("*").Where(goqu.C("user_profile_id").Eq(claims["id"])).ScanStruct(&user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load user profile", "details": err.Error()})
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
 
 	if user.User_Profile_ID == 0 {
 		c.AbortWithStatus(http.StatusUnauthorized)

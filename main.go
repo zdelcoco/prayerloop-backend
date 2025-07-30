@@ -41,7 +41,7 @@ func main() {
 		auth.GET("/users/:user_profile_id/prayers", controllers.GetUserPrayers)
 		auth.POST("/users/:user_profile_id/prayers", controllers.CreateUserPrayer)
 
-		auth.GET("/users/:user_profile_id/preferences", controllers.GetUserPreferences)
+		auth.GET("/users/:user_profile_id/preferences", controllers.GetUserPreferencesWithDefaults)
 		auth.PATCH("/users/:user_profile_id/preferences/:preference_id", controllers.UpdateUserPreferences)
 
 		// notification routes
