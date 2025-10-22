@@ -6,6 +6,7 @@ import (
 
 	"github.com/PrayerLoop/initializers"
 	"github.com/PrayerLoop/models"
+	"github.com/PrayerLoop/services"
 
 	"github.com/doug-martin/goqu/v9"
 	"github.com/gin-gonic/gin"
@@ -108,4 +109,52 @@ func ToggleUserNotificationStatus(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Notification marked as " + newStatus})
+}
+
+type SendNotificationRequest struct {
+	UserIDs  []int             `json:"userIds" binding:"required"`
+	Title    string            `json:"title" binding:"required"`
+	Body     string            `json:"body" binding:"required"`
+	Data     map[string]string `json:"data,omitempty"`
+	Sound    string            `json:"sound,omitempty"`
+	Badge    string            `json:"badge,omitempty"`
+	Priority string            `json:"priority,omitempty"`
+}
+
+func SendPushNotification(c *gin.Context) {
+	var request SendNotificationRequest
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get push notification service
+	pushService := services.GetPushNotificationService()
+	if pushService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Push notification service not available"})
+		return
+	}
+
+	// Create notification payload
+	payload := services.NotificationPayload{
+		Title:    request.Title,
+		Body:     request.Body,
+		Data:     request.Data,
+		Sound:    request.Sound,
+		Badge:    request.Badge,
+		Priority: request.Priority,
+	}
+
+	// Send notifications to all specified users
+	err := pushService.SendNotificationToUsers(request.UserIDs, payload)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send push notifications", "details": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Push notifications sent successfully",
+		"userIds": request.UserIDs,
+	})
 }

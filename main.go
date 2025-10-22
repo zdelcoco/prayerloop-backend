@@ -6,11 +6,13 @@ import (
 	"github.com/PrayerLoop/controllers"
 	"github.com/PrayerLoop/initializers"
 	"github.com/PrayerLoop/middlewares"
+	"github.com/PrayerLoop/services"
 )
 
 func init() {
 	initializers.LoadEnv()
 	initializers.ConnectDB()
+	services.InitPushNotificationService()
 }
 
 func main() {
@@ -43,6 +45,9 @@ func main() {
 
 		auth.GET("/users/:user_profile_id/preferences", controllers.GetUserPreferencesWithDefaults)
 		auth.PATCH("/users/:user_profile_id/preferences/:preference_id", controllers.UpdateUserPreferences)
+		
+		// push token route
+		auth.POST("/users/push-token", controllers.StorePushToken)
 
 		// notification routes
 		auth.GET("/users/:user_profile_id/notifications", controllers.GetUserNotifications)
@@ -79,6 +84,9 @@ func main() {
 		{
 			admin.GET("/prayers", controllers.GetPrayers)
 			admin.GET("/prayers/:prayer_id", controllers.GetPrayer)
+			
+			// push notification routes
+			admin.POST("/notifications/send", controllers.SendPushNotification)
 		}
 	}
 
