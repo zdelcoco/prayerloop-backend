@@ -41,17 +41,27 @@ func InitPushNotificationService() {
 	pushService = &PushNotificationService{}
 
 	// Initialize Firebase Admin SDK
+	serviceAccountJSON := os.Getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
 	serviceAccountPath := os.Getenv("FIREBASE_SERVICE_ACCOUNT_PATH")
-	
+
 	var app *firebase.App
 	var err error
 
-	if serviceAccountPath != "" {
-		// Use service account file
+	if serviceAccountJSON != "" {
+		// Use service account JSON from environment variable (for production/EC2)
+		opt := option.WithCredentialsJSON([]byte(serviceAccountJSON))
+		app, err = firebase.NewApp(context.Background(), nil, opt)
+		if err != nil {
+			log.Printf("Failed to initialize Firebase app with service account JSON: %v", err)
+			return
+		}
+		log.Println("Firebase initialized with service account JSON from environment")
+	} else if serviceAccountPath != "" {
+		// Use service account file (for local development)
 		opt := option.WithCredentialsFile(serviceAccountPath)
 		app, err = firebase.NewApp(context.Background(), nil, opt)
 		if err != nil {
-			log.Printf("Failed to initialize Firebase app with service account: %v", err)
+			log.Printf("Failed to initialize Firebase app with service account file: %v", err)
 			return
 		}
 		log.Println("Firebase initialized with service account file")
@@ -146,7 +156,16 @@ func (s *PushNotificationService) sendToToken(pushToken models.PushToken, payloa
 
 	// Platform-specific configuration
 	if pushToken.Platform == "ios" {
+		// Determine if we should use sandbox or production APNs
+		// For development builds, use sandbox (false). For production builds, use production (true)
+		// You can set this via environment variable or hardcode based on your setup
+		useSandbox := os.Getenv("APNS_USE_SANDBOX") == "true"
+
+		log.Printf("APNs Configuration - Using sandbox: %v, Token: %s, Platform: %s",
+			useSandbox, pushToken.PushToken[:20]+"...", pushToken.Platform)
+
 		message.APNS = &messaging.APNSConfig{
+			Headers: map[string]string{},
 			Payload: &messaging.APNSPayload{
 				Aps: &messaging.Aps{
 					Alert: &messaging.ApsAlert{
@@ -167,9 +186,19 @@ func (s *PushNotificationService) sendToToken(pushToken models.PushToken, payloa
 
 		// Set priority
 		if payload.Priority == "high" {
-			message.APNS.Headers = map[string]string{
-				"apns-priority": "10",
-			}
+			message.APNS.Headers["apns-priority"] = "10"
+		} else {
+			message.APNS.Headers["apns-priority"] = "5"
+		}
+
+		// IMPORTANT: Set the APNs environment (sandbox for dev builds, production for prod builds)
+		// This tells Firebase which APNs server to use
+		if useSandbox {
+			message.APNS.Headers["apns-push-type"] = "alert"
+			log.Printf("Using APNs SANDBOX environment for development build")
+		} else {
+			message.APNS.Headers["apns-push-type"] = "alert"
+			log.Printf("Using APNs PRODUCTION environment for production build")
 		}
 	} else if pushToken.Platform == "android" {
 		message.Android = &messaging.AndroidConfig{
