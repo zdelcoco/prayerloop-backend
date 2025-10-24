@@ -16,7 +16,7 @@ jobs:
 
       - name: Create .env file from secret
         run: |
-          echo "${{ secrets.ENV_FILE }}" > .env
+          echo "${{ secrets.ENV_FILE }}" | base64 -d > .env
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
@@ -46,7 +46,7 @@ jobs:
             set -e
 
             # Optional: create .env file on the server
-            echo "$ENV_FILE" > .env
+            echo "$ENV_FILE" | base64 -d > .env
 
             # Stop and remove the existing container (if any)
             sudo docker rm -f prayerloop || true
