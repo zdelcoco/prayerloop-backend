@@ -14,6 +14,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
+      - name: Create Firebase service account file from secret
+        run: |
+          echo "${{ secrets.FIREBASE_SVC_ACCT_FILE }}" | base64 -d > firebase-service-account.json
+
       - name: Create .env file from secret
         run: |
           echo "${{ secrets.ENV_FILE }}" | base64 -d > .env
@@ -37,6 +41,7 @@ jobs:
       - name: Deploy to EC2
         env:
           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          FIREBASE_SVC_ACCT_FILE: ${{ secrets.FIREBASE_SVC_ACCT_FILE }}
           ENV_FILE: ${{ secrets.ENV_FILE }}
         run: |
           echo "$EC2_SSH_KEY" > ec2_key.pem
@@ -45,7 +50,10 @@ jobs:
           ssh -o StrictHostKeyChecking=no -i ec2_key.pem ec2-user@${{ secrets.EC2_PUBLIC_IP }} << 'EOF'
             set -e
 
-            # Optional: create .env file on the server
+            # Create Firebase service account file on the server
+            echo "$FIREBASE_SVC_ACCT_FILE" | base64 -d > firebase-service-account.json
+
+            # Create .env file on the server
             echo "$ENV_FILE" | base64 -d > .env
 
             # Stop and remove the existing container (if any)

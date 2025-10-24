@@ -16,7 +16,7 @@ import (
 	"github.com/PrayerLoop/initializers"
 	"github.com/PrayerLoop/models"
 	"github.com/doug-martin/goqu/v9"
-	
+
 	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/messaging"
 	"google.golang.org/api/option"
@@ -41,40 +41,20 @@ func InitPushNotificationService() {
 	pushService = &PushNotificationService{}
 
 	// Initialize Firebase Admin SDK
-	serviceAccountJSON := os.Getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
-	serviceAccountPath := os.Getenv("FIREBASE_SERVICE_ACCOUNT_PATH")
+	serviceAccountFile := os.Getenv("FIREBASE_SERVICE_ACCOUNT_FILE")
 
 	var app *firebase.App
 	var err error
 
-	if serviceAccountJSON != "" {
-		// Use service account JSON from environment variable (for production/EC2)
-		// Parse JSON to extract project ID
-		var serviceAccount struct {
-			ProjectID string `json:"project_id"`
-		}
-		if err := json.Unmarshal([]byte(serviceAccountJSON), &serviceAccount); err != nil {
-			log.Printf("Failed to parse service account JSON: %v", err)
-			return
-		}
-
-		opt := option.WithCredentialsJSON([]byte(serviceAccountJSON))
-		config := &firebase.Config{ProjectID: serviceAccount.ProjectID}
-		app, err = firebase.NewApp(context.Background(), config, opt)
-		if err != nil {
-			log.Printf("Failed to initialize Firebase app with service account JSON: %v", err)
-			return
-		}
-		log.Printf("Firebase initialized with service account JSON from environment (Project ID: %s)", serviceAccount.ProjectID)
-	} else if serviceAccountPath != "" {
-		// Use service account file (for local development)
-		opt := option.WithCredentialsFile(serviceAccountPath)
+	if serviceAccountFile != "" {
+		// Use service account file (works for both local and production)
+		opt := option.WithCredentialsFile(serviceAccountFile)
 		app, err = firebase.NewApp(context.Background(), nil, opt)
 		if err != nil {
 			log.Printf("Failed to initialize Firebase app with service account file: %v", err)
 			return
 		}
-		log.Println("Firebase initialized with service account file")
+		log.Printf("Firebase initialized with service account file: %s", serviceAccountFile)
 	} else {
 		// Use Application Default Credentials (ADC)
 		app, err = firebase.NewApp(context.Background(), nil)
