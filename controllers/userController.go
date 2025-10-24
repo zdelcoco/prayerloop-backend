@@ -802,7 +802,7 @@ func StorePushToken(c *gin.Context) {
 	insert := initializers.DB.Insert("user_push_tokens").
 		Rows(newToken).
 		OnConflict(goqu.DoUpdate(
-			"idx_user_push_tokens_userid_token", // The unique index name
+			"user_profile_id, push_token", // The columns with the unique constraint
 			goqu.Record{
 				"platform":   request.Platform,
 				"updated_at": time.Now(),
