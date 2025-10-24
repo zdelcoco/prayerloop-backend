@@ -49,13 +49,23 @@ func InitPushNotificationService() {
 
 	if serviceAccountJSON != "" {
 		// Use service account JSON from environment variable (for production/EC2)
+		// Parse JSON to extract project ID
+		var serviceAccount struct {
+			ProjectID string `json:"project_id"`
+		}
+		if err := json.Unmarshal([]byte(serviceAccountJSON), &serviceAccount); err != nil {
+			log.Printf("Failed to parse service account JSON: %v", err)
+			return
+		}
+
 		opt := option.WithCredentialsJSON([]byte(serviceAccountJSON))
-		app, err = firebase.NewApp(context.Background(), nil, opt)
+		config := &firebase.Config{ProjectID: serviceAccount.ProjectID}
+		app, err = firebase.NewApp(context.Background(), config, opt)
 		if err != nil {
 			log.Printf("Failed to initialize Firebase app with service account JSON: %v", err)
 			return
 		}
-		log.Println("Firebase initialized with service account JSON from environment")
+		log.Printf("Firebase initialized with service account JSON from environment (Project ID: %s)", serviceAccount.ProjectID)
 	} else if serviceAccountPath != "" {
 		// Use service account file (for local development)
 		opt := option.WithCredentialsFile(serviceAccountPath)
