@@ -790,17 +790,18 @@ func StorePushToken(c *gin.Context) {
 	// Otherwise, insert a new record
 	log.Printf("Upserting push token for user %d", userID)
 
-	newToken := models.PushToken{
-		UserProfileID: userID,
-		PushToken:     request.PushToken,
-		Platform:      request.Platform,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
+	// Use goqu.Record to avoid including the auto-generated ID field
+	newTokenRecord := goqu.Record{
+		"user_profile_id": userID,
+		"push_token":      request.PushToken,
+		"platform":        request.Platform,
+		"created_at":      time.Now(),
+		"updated_at":      time.Now(),
 	}
 
 	// Build the INSERT query with ON CONFLICT clause
 	insert := initializers.DB.Insert("user_push_tokens").
-		Rows(newToken).
+		Rows(newTokenRecord).
 		OnConflict(goqu.DoUpdate(
 			"user_profile_id, push_token", // The columns with the unique constraint
 			goqu.Record{
