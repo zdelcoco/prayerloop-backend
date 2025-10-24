@@ -785,42 +785,11 @@ func StorePushToken(c *gin.Context) {
 	user := userClaim.(models.UserProfile)
 	userID := user.User_Profile_ID
 
-	// Check if this push token already exists for this user
-	var existingToken models.PushToken
-	query := initializers.DB.From("user_push_tokens").
-		Where(goqu.C("user_profile_id").Eq(userID)).
-		Where(goqu.C("push_token").Eq(request.PushToken)).
-		Limit(1)
+	// Use UPSERT (INSERT ... ON CONFLICT) to handle duplicate tokens atomically
+	// If the (user_profile_id, push_token) combination already exists, update the platform and timestamp
+	// Otherwise, insert a new record
+	log.Printf("Upserting push token for user %d", userID)
 
-	sql, params, _ := query.ToSQL()
-	log.Printf("Checking for existing token with query: %s, params: %v", sql, params)
-	_, err := query.ScanStruct(&existingToken)
-	log.Printf("Query result - err: %v, existingToken: %+v", err, existingToken)
-	if err == nil && (existingToken.UserPushTokenID > 0 || existingToken.PushToken != "") {
-		// Token already exists, update the platform and timestamp
-		log.Printf("Updating existing push token for user %d", userID)
-		update := initializers.DB.Update("user_push_tokens").
-			Set(goqu.Record{
-				"platform":   request.Platform,
-				"updated_at": time.Now(),
-			}).
-			Where(goqu.C("user_profile_id").Eq(userID)).
-			Where(goqu.C("push_token").Eq(request.PushToken))
-
-		_, err := update.Executor().Exec()
-		if err != nil {
-			log.Printf("Failed to update push token: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update push token", "details": err.Error()})
-			return
-		}
-
-		log.Printf("Push token updated successfully for user %d", userID)
-		c.JSON(http.StatusOK, gin.H{"message": "Push token updated successfully"})
-		return
-	}
-
-	// Insert new push token
-	log.Printf("Inserting new push token for user %d", userID)
 	newToken := models.PushToken{
 		UserProfileID: userID,
 		PushToken:     request.PushToken,
@@ -829,13 +798,27 @@ func StorePushToken(c *gin.Context) {
 		UpdatedAt:     time.Now(),
 	}
 
-	insert := initializers.DB.Insert("user_push_tokens").Rows(newToken).Executor()
-	if _, err := insert.Exec(); err != nil {
-		log.Printf("Failed to insert push token: %v", err)
+	// Build the INSERT query with ON CONFLICT clause
+	insert := initializers.DB.Insert("user_push_tokens").
+		Rows(newToken).
+		OnConflict(goqu.DoUpdate(
+			"idx_user_push_tokens_userid_token", // The unique index name
+			goqu.Record{
+				"platform":   request.Platform,
+				"updated_at": time.Now(),
+			},
+		))
+
+	sql, params, _ := insert.ToSQL()
+	log.Printf("Executing upsert query: %s, params: %v", sql, params)
+
+	_, err := insert.Executor().Exec()
+	if err != nil {
+		log.Printf("Failed to upsert push token: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store push token", "details": err.Error()})
 		return
 	}
 
-	log.Printf("Push token stored successfully for user %d", userID)
+	log.Printf("Push token upserted successfully for user %d", userID)
 	c.JSON(http.StatusOK, gin.H{"message": "Push token stored successfully"})
 }
