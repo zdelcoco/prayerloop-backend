@@ -34,10 +34,11 @@ func main() {
 	auth.Use(middlewares.CheckAuth)
 	auth.Use(middlewares.RateLimitMiddleware(10, 10, getKey))
 	{
-		// Admin-only user creation endpoint
-		auth.POST("/users", controllers.UserSignup)
 
+		// user routes
 		auth.GET("/users/me", controllers.GetUserProfile)
+		auth.PATCH("/users/:user_profile_id", controllers.UpdateUserProfile)
+
 		auth.GET("/users/:user_profile_id/groups", controllers.GetUserGroups)
 
 		auth.GET("/users/:user_profile_id/prayers", controllers.GetUserPrayers)
@@ -45,7 +46,7 @@ func main() {
 
 		auth.GET("/users/:user_profile_id/preferences", controllers.GetUserPreferencesWithDefaults)
 		auth.PATCH("/users/:user_profile_id/preferences/:preference_id", controllers.UpdateUserPreferences)
-		
+
 		// push token route
 		auth.POST("/users/push-token", controllers.StorePushToken)
 
@@ -82,9 +83,11 @@ func main() {
 		admin.Use(middlewares.CheckAdmin)
 		admin.Use(middlewares.RateLimitMiddleware(5, 5, getKey))
 		{
+			admin.POST("/users", controllers.UserSignup)
+
 			admin.GET("/prayers", controllers.GetPrayers)
 			admin.GET("/prayers/:prayer_id", controllers.GetPrayer)
-			
+
 			// push notification routes
 			admin.POST("/notifications/send", controllers.SendPushNotification)
 		}

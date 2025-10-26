@@ -823,3 +823,192 @@ func StorePushToken(c *gin.Context) {
 	log.Printf("Push token upserted successfully for user %d", userID)
 	c.JSON(http.StatusOK, gin.H{"message": "Push token stored successfully"})
 }
+
+func UpdateUserProfile(c *gin.Context) {
+	currentUser := c.MustGet("currentUser").(models.UserProfile)
+	isAdmin := c.MustGet("admin").(bool)
+
+	userID, err := strconv.Atoi(c.Param("user_profile_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user profile ID", "details": err.Error()})
+		return
+	}
+
+	if userID != currentUser.User_Profile_ID && !isAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to update this user's profile"})
+		return
+	}
+
+	var updateData models.UserProfileUpdate
+	if err := c.ShouldBindJSON(&updateData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Verify the user exists
+	var existingUser models.UserProfile
+	_, err = initializers.DB.From("user_profile").
+		Select("*").
+		Where(goqu.C("user_profile_id").Eq(userID)).
+		ScanStruct(&existingUser)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found", "details": err.Error()})
+		return
+	}
+
+	// Build the update record with only provided fields
+	updateRecord := goqu.Record{
+		"updated_by":      currentUser.User_Profile_ID,
+		"datetime_update": time.Now(),
+	}
+
+	// Validate and add each field if provided
+	if updateData.First_Name != nil {
+		firstName := strings.TrimSpace(*updateData.First_Name)
+		if firstName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "First name cannot be empty"})
+			return
+		}
+		updateRecord["first_name"] = firstName
+	}
+
+	if updateData.Last_Name != nil {
+		lastName := strings.TrimSpace(*updateData.Last_Name)
+		if lastName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Last name cannot be empty"})
+			return
+		}
+		updateRecord["last_name"] = lastName
+	}
+
+	if updateData.Email != nil {
+		email := strings.TrimSpace(*updateData.Email)
+		if email == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Email cannot be empty"})
+			return
+		}
+
+		// Basic email validation
+		if !strings.Contains(email, "@") || !strings.Contains(email, ".") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid email format"})
+			return
+		}
+
+		// Check if email is already in use by another user
+		if email != existingUser.Email {
+			emailCount, err := initializers.DB.From("user_profile").
+				Select("email").
+				Where(goqu.And(
+					goqu.C("email").Eq(email),
+					goqu.C("user_profile_id").Neq(userID),
+				)).
+				Count()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check email availability", "details": err.Error()})
+				return
+			}
+
+			if emailCount > 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Email is already in use by another account"})
+				return
+			}
+
+			updateRecord["email"] = email
+			// Reset email verification if email changed
+			updateRecord["email_verified"] = false
+		}
+	}
+
+	if updateData.Username != nil {
+		username := strings.TrimSpace(*updateData.Username)
+		if username == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Username cannot be empty"})
+			return
+		}
+
+		// Check if username is already in use by another user
+		if username != existingUser.Username {
+			usernameCount, err := initializers.DB.From("user_profile").
+				Select("username").
+				Where(goqu.And(
+					goqu.C("username").Eq(username),
+					goqu.C("user_profile_id").Neq(userID),
+				)).
+				Count()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check username availability", "details": err.Error()})
+				return
+			}
+
+			if usernameCount > 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Username is already taken"})
+				return
+			}
+
+			updateRecord["username"] = username
+		}
+	}
+
+	// Phone number can be set to empty/null
+	if updateData.Phone_Number != nil {
+		phoneNumber := strings.TrimSpace(*updateData.Phone_Number)
+		if phoneNumber == "" {
+			updateRecord["phone_number"] = nil
+			// Reset phone verification if phone number is removed
+			updateRecord["phone_verified"] = false
+		} else {
+			// Basic phone number validation (remove all non-digits and check length)
+			digitsOnly := strings.Map(func(r rune) rune {
+				if r >= '0' && r <= '9' {
+					return r
+				}
+				return -1
+			}, phoneNumber)
+
+			if len(digitsOnly) < 10 || len(digitsOnly) > 15 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid phone number format"})
+				return
+			}
+
+			updateRecord["phone_number"] = phoneNumber
+			// Reset phone verification if phone number changed
+			if existingUser.Phone_Number == nil || *existingUser.Phone_Number != phoneNumber {
+				updateRecord["phone_verified"] = false
+			}
+		}
+	}
+
+	// Check if there are any fields to update (beyond updated_by and datetime_update)
+	if len(updateRecord) <= 2 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No valid fields provided for update"})
+		return
+	}
+
+	// Perform the update
+	update := initializers.DB.Update("user_profile").
+		Set(updateRecord).
+		Where(goqu.C("user_profile_id").Eq(userID))
+
+	_, err = update.Executor().Exec()
+	if err != nil {
+		log.Println("Update error:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user profile", "details": err.Error()})
+		return
+	}
+
+	// Fetch and return the updated user profile
+	var updatedUser models.UserProfile
+	_, err = initializers.DB.From("user_profile").
+		Select("*").
+		Where(goqu.C("user_profile_id").Eq(userID)).
+		ScanStruct(&updatedUser)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "User updated but failed to retrieve updated data", "details": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "User profile updated successfully",
+		"user":    updatedUser,
+	})
+}
