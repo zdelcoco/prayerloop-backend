@@ -38,6 +38,7 @@ func main() {
 		// user routes
 		auth.GET("/users/me", controllers.GetUserProfile)
 		auth.PATCH("/users/:user_profile_id", controllers.UpdateUserProfile)
+		auth.PATCH("/users/:user_profile_id/password", controllers.ChangeUserPassword)
 
 		auth.GET("/users/:user_profile_id/groups", controllers.GetUserGroups)
 

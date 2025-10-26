@@ -824,6 +824,84 @@ func StorePushToken(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Push token stored successfully"})
 }
 
+func ChangeUserPassword(c *gin.Context) {
+	currentUser := c.MustGet("currentUser").(models.UserProfile)
+	isAdmin := c.MustGet("admin").(bool)
+
+	userID, err := strconv.Atoi(c.Param("user_profile_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user profile ID", "details": err.Error()})
+		return
+	}
+
+	// Authorization: user can only change their own password unless they're an admin
+	if userID != currentUser.User_Profile_ID && !isAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to change this user's password"})
+		return
+	}
+
+	var passwordChange models.UserProfileChangePassword
+	if err := c.ShouldBindJSON(&passwordChange); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Verify the user exists and get their current password
+	var existingUser models.UserProfile
+	_, err = initializers.DB.From("user_profile").
+		Select("*").
+		Where(goqu.C("user_profile_id").Eq(userID)).
+		ScanStruct(&existingUser)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found", "details": err.Error()})
+		return
+	}
+
+	// Verify old password (unless admin is changing another user's password)
+	if userID == currentUser.User_Profile_ID {
+		err = bcrypt.CompareHashAndPassword([]byte(existingUser.Password), []byte(passwordChange.Old_Password))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Current password is incorrect"})
+			return
+		}
+	}
+
+	// Validate new password
+	if len(passwordChange.New_Password) < 6 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "New password must be at least 6 characters long"})
+		return
+	}
+
+	// Hash the new password
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(passwordChange.New_Password), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash new password", "details": err.Error()})
+		return
+	}
+
+	// Update the password
+	updateRecord := goqu.Record{
+		"password":        string(passwordHash),
+		"updated_by":      currentUser.User_Profile_ID,
+		"datetime_update": time.Now(),
+	}
+
+	update := initializers.DB.Update("user_profile").
+		Set(updateRecord).
+		Where(goqu.C("user_profile_id").Eq(userID))
+
+	_, err = update.Executor().Exec()
+	if err != nil {
+		log.Println("Password update error:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update password", "details": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Password changed successfully",
+	})
+}
+
 func UpdateUserProfile(c *gin.Context) {
 	currentUser := c.MustGet("currentUser").(models.UserProfile)
 	isAdmin := c.MustGet("admin").(bool)
