@@ -13,6 +13,7 @@ func init() {
 	initializers.LoadEnv()
 	initializers.ConnectDB()
 	services.InitPushNotificationService()
+	services.InitEmailService()
 }
 
 func main() {
@@ -29,6 +30,14 @@ func main() {
 	router.POST("/signup", middlewares.RateLimitMiddleware(2, 2, getKey), controllers.PublicUserSignup)
 	router.GET("/check-username", middlewares.RateLimitMiddleware(5, 5, getKey), controllers.CheckUsernameAvailability)
 	router.GET("/ping", middlewares.RateLimitMiddleware(2, 2, getKey), controllers.Ping)
+
+	// Password reset endpoints
+	router.POST("/auth/forgot-password", middlewares.RateLimitMiddleware(2, 2, getKey), controllers.ForgotPassword)
+	router.POST("/auth/verify-reset-code", middlewares.RateLimitMiddleware(5, 5, getKey), controllers.VerifyResetCode)
+	router.POST("/auth/reset-password", middlewares.RateLimitMiddleware(2, 2, getKey), controllers.ResetPassword)
+
+	// Test endpoint for email service (remove in production)
+	router.POST("/test/email", middlewares.RateLimitMiddleware(2, 2, getKey), controllers.TestEmailService)
 
 	auth := router.Group("/")
 	auth.Use(middlewares.CheckAuth)
