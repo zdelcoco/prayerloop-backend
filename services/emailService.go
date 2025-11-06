@@ -259,3 +259,288 @@ func (s *EmailService) SendWelcomeEmail(toEmail string, firstName string) error 
 	log.Printf("Successfully sent welcome email to %s. Email ID: %s", toEmail, sent.Id)
 	return nil
 }
+
+// SendGroupLeftEmail sends an email when a user voluntarily leaves a group
+func (s *EmailService) SendGroupLeftEmail(toEmail string, firstName string, groupName string) error {
+	if s.client == nil {
+		return fmt.Errorf("email service not initialized")
+	}
+
+	htmlBody := fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            padding: 20px 0;
+            border-bottom: 2px solid #90c590;
+        }
+        .header h1 {
+            color: #90c590;
+            margin: 0;
+        }
+        .content {
+            padding: 30px 0;
+        }
+        .footer {
+            text-align: center;
+            padding: 20px 0;
+            border-top: 1px solid #ddd;
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>prayerloop</h1>
+    </div>
+
+    <div class="content">
+        <h2>You Left a Group</h2>
+
+        <p>Hi %s,</p>
+
+        <p>This is a confirmation that you have left the group <strong>"%s"</strong>.</p>
+
+        <p>You will no longer receive prayers or updates from this group. If you'd like to rejoin, please contact the group creator for a new invitation.</p>
+
+        <p>Blessings,<br>The prayerloop Team</p>
+    </div>
+
+    <div class="footer">
+        <p>&copy; 2025 prayerloop. All rights reserved.</p>
+    </div>
+</body>
+</html>
+`, firstName, groupName)
+
+	textBody := fmt.Sprintf(`
+You Left a Group
+
+Hi %s,
+
+This is a confirmation that you have left the group "%s".
+
+You will no longer receive prayers or updates from this group. If you'd like to rejoin, please contact the group creator for a new invitation.
+
+Blessings,
+The prayerloop Team
+`, firstName, groupName)
+
+	params := &resend.SendEmailRequest{
+		From:    os.Getenv("RESEND_FROM_EMAIL"),
+		To:      []string{toEmail},
+		Subject: fmt.Sprintf("You left \"%s\" on prayerloop", groupName),
+		Html:    htmlBody,
+		Text:    textBody,
+	}
+
+	sent, err := s.client.Emails.Send(params)
+	if err != nil {
+		log.Printf("Failed to send group left email to %s: %v", toEmail, err)
+		return fmt.Errorf("failed to send email: %v", err)
+	}
+
+	log.Printf("Successfully sent group left email to %s. Email ID: %s", toEmail, sent.Id)
+	return nil
+}
+
+// SendGroupDeletedEmail sends an email to all members when a group is deleted
+func (s *EmailService) SendGroupDeletedEmail(toEmail string, firstName string, groupName string) error {
+	if s.client == nil {
+		return fmt.Errorf("email service not initialized")
+	}
+
+	htmlBody := fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            padding: 20px 0;
+            border-bottom: 2px solid #90c590;
+        }
+        .header h1 {
+            color: #90c590;
+            margin: 0;
+        }
+        .content {
+            padding: 30px 0;
+        }
+        .footer {
+            text-align: center;
+            padding: 20px 0;
+            border-top: 1px solid #ddd;
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>prayerloop</h1>
+    </div>
+
+    <div class="content">
+        <h2>Group Deleted</h2>
+
+        <p>Hi %s,</p>
+
+        <p>The group <strong>"%s"</strong> has been deleted by its creator.</p>
+
+        <p>You no longer have access to this group or its prayers. If you believe this was done in error, please contact the group creator.</p>
+
+        <p>Blessings,<br>The prayerloop Team</p>
+    </div>
+
+    <div class="footer">
+        <p>&copy; 2025 prayerloop. All rights reserved.</p>
+    </div>
+</body>
+</html>
+`, firstName, groupName)
+
+	textBody := fmt.Sprintf(`
+Group Deleted
+
+Hi %s,
+
+The group "%s" has been deleted by its creator.
+
+You no longer have access to this group or its prayers. If you believe this was done in error, please contact the group creator.
+
+Blessings,
+The prayerloop Team
+`, firstName, groupName)
+
+	params := &resend.SendEmailRequest{
+		From:    os.Getenv("RESEND_FROM_EMAIL"),
+		To:      []string{toEmail},
+		Subject: fmt.Sprintf("\"%s\" has been deleted", groupName),
+		Html:    htmlBody,
+		Text:    textBody,
+	}
+
+	sent, err := s.client.Emails.Send(params)
+	if err != nil {
+		log.Printf("Failed to send group deleted email to %s: %v", toEmail, err)
+		return fmt.Errorf("failed to send email: %v", err)
+	}
+
+	log.Printf("Successfully sent group deleted email to %s. Email ID: %s", toEmail, sent.Id)
+	return nil
+}
+
+// SendRemovedFromGroupEmail sends an email when a user is removed from a group by the creator
+func (s *EmailService) SendRemovedFromGroupEmail(toEmail string, firstName string, groupName string) error {
+	if s.client == nil {
+		return fmt.Errorf("email service not initialized")
+	}
+
+	htmlBody := fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            padding: 20px 0;
+            border-bottom: 2px solid #90c590;
+        }
+        .header h1 {
+            color: #90c590;
+            margin: 0;
+        }
+        .content {
+            padding: 30px 0;
+        }
+        .footer {
+            text-align: center;
+            padding: 20px 0;
+            border-top: 1px solid #ddd;
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>prayerloop</h1>
+    </div>
+
+    <div class="content">
+        <h2>Removed from Group</h2>
+
+        <p>Hi %s,</p>
+
+        <p>You have been removed from the group <strong>"%s"</strong> by the group creator.</p>
+
+        <p>You no longer have access to this group or its prayers. If you have questions about this, please contact the group creator.</p>
+
+        <p>Blessings,<br>The prayerloop Team</p>
+    </div>
+
+    <div class="footer">
+        <p>&copy; 2025 prayerloop. All rights reserved.</p>
+    </div>
+</body>
+</html>
+`, firstName, groupName)
+
+	textBody := fmt.Sprintf(`
+Removed from Group
+
+Hi %s,
+
+You have been removed from the group "%s" by the group creator.
+
+You no longer have access to this group or its prayers. If you have questions about this, please contact the group creator.
+
+Blessings,
+The prayerloop Team
+`, firstName, groupName)
+
+	params := &resend.SendEmailRequest{
+		From:    os.Getenv("RESEND_FROM_EMAIL"),
+		To:      []string{toEmail},
+		Subject: fmt.Sprintf("You were removed from \"%s\"", groupName),
+		Html:    htmlBody,
+		Text:    textBody,
+	}
+
+	sent, err := s.client.Emails.Send(params)
+	if err != nil {
+		log.Printf("Failed to send removed from group email to %s: %v", toEmail, err)
+		return fmt.Errorf("failed to send email: %v", err)
+	}
+
+	log.Printf("Successfully sent removed from group email to %s. Email ID: %s", toEmail, sent.Id)
+	return nil
+}

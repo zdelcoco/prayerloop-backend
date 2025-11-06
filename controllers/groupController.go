@@ -9,6 +9,7 @@ import (
 
 	"github.com/PrayerLoop/initializers"
 	"github.com/PrayerLoop/models"
+	"github.com/PrayerLoop/services"
 
 	"github.com/doug-martin/goqu/v9"
 	"github.com/gin-gonic/gin"
@@ -186,15 +187,10 @@ func UpdateGroup(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Group updated successfully"})
 }
 
-// only admins for now
-// todo: allow group creator to delete group
+// Allow group creator or admin to delete group
 func DeleteGroup(c *gin.Context) {
+	currentUser := c.MustGet("currentUser").(models.UserProfile)
 	admin := c.MustGet("admin").(bool)
-
-	if !admin {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Only admins can delete groups"})
-		return
-	}
 
 	groupID, err := strconv.Atoi(c.Param("group_profile_id"))
 	if err != nil {
@@ -202,10 +198,71 @@ func DeleteGroup(c *gin.Context) {
 		return
 	}
 
-	deleteStmt := initializers.DB.Delete("group_profile").
+	// Check if user is the group creator and fetch group info
+	var group models.GroupProfile
+	selectStmt := initializers.DB.From("group_profile").
+		Select("created_by", "group_name").
 		Where(goqu.C("group_profile_id").Eq(groupID))
 
-	result, err := deleteStmt.Executor().Exec()
+	found, err := selectStmt.ScanStruct(&group)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch group", "details": err.Error()})
+		return
+	}
+
+	if !found {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Group not found"})
+		return
+	}
+
+	// Only allow if user is admin OR the group creator
+	if !admin && group.Created_By != currentUser.User_Profile_ID {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Only the group creator or an admin can delete this group"})
+		return
+	}
+
+	// Fetch all group members BEFORE deleting for email notifications
+	var groupMembers []models.UserProfile
+	err = initializers.DB.From("user_group").
+		InnerJoin(
+			goqu.T("user_profile"),
+			goqu.On(goqu.Ex{"user_group.user_profile_id": goqu.I("user_profile.user_profile_id")}),
+		).
+		Select("user_profile.*").
+		Where(goqu.C("user_group.group_profile_id").Eq(groupID)).
+		ScanStructs(&groupMembers)
+	if err != nil {
+		log.Printf("Failed to fetch group members for email notifications: %v", err)
+	}
+
+	// Delete all user_group records for this group first
+	deleteUserGroupStmt := initializers.DB.Delete("user_group").
+		Where(goqu.C("group_profile_id").Eq(groupID))
+
+	_, err = deleteUserGroupStmt.Executor().Exec()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete group members", "details": err.Error()})
+		return
+	}
+
+	// Delete all prayer_access records for this group
+	deletePrayerAccessStmt := initializers.DB.Delete("prayer_access").
+		Where(
+			goqu.C("access_type").Eq("group"),
+			goqu.C("access_type_id").Eq(groupID),
+		)
+
+	_, err = deletePrayerAccessStmt.Executor().Exec()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete group prayers", "details": err.Error()})
+		return
+	}
+
+	// Now delete the group itself (group_invite will cascade automatically)
+	deleteGroupStmt := initializers.DB.Delete("group_profile").
+		Where(goqu.C("group_profile_id").Eq(groupID))
+
+	result, err := deleteGroupStmt.Executor().Exec()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete group", "details": err.Error()})
 		return
@@ -215,6 +272,22 @@ func DeleteGroup(c *gin.Context) {
 	if rowsAffected == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Group not found"})
 		return
+	}
+
+	// Send email notifications to all group members
+	emailService := services.GetEmailService()
+	if emailService != nil && len(groupMembers) > 0 && group.Group_Name != "" {
+		// Send emails in background to all members
+		go func() {
+			for _, member := range groupMembers {
+				if member.Email != "" {
+					err := emailService.SendGroupDeletedEmail(member.Email, member.First_Name, group.Group_Name)
+					if err != nil {
+						log.Printf("Failed to send group deleted email to %s: %v", member.Email, err)
+					}
+				}
+			}
+		}()
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Group deleted successfully"})
@@ -353,6 +426,29 @@ func RemoveUserFromGroup(c *gin.Context) {
 		return
 	}
 
+	// Fetch user and group information for email
+	var user models.UserProfile
+	var group models.GroupProfile
+
+	_, err = initializers.DB.From("user_profile").
+		Select("*").
+		Where(goqu.C("user_profile_id").Eq(userID)).
+		ScanStruct(&user)
+	if err != nil {
+		log.Printf("Failed to fetch user for email: %v", err)
+	}
+
+	_, err = initializers.DB.From("group_profile").
+		Select("group_name").
+		Where(goqu.C("group_profile_id").Eq(groupID)).
+		ScanStruct(&group)
+	if err != nil {
+		log.Printf("Failed to fetch group for email: %v", err)
+	}
+
+	// Determine if this is voluntary leave or forced removal
+	isVoluntaryLeave := userID == currentUser.User_Profile_ID
+
 	deleteStmt := initializers.DB.Delete("user_group").
 		Where(
 			goqu.C("user_profile_id").Eq(userID),
@@ -375,6 +471,28 @@ func RemoveUserFromGroup(c *gin.Context) {
 	if rowsAffected == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User is not a member of this group or already removed"})
 		return
+	}
+
+	// Send appropriate email notification
+	emailService := services.GetEmailService()
+	if emailService != nil && user.Email != "" && group.Group_Name != "" {
+		if isVoluntaryLeave {
+			// User voluntarily left the group
+			go func() {
+				err := emailService.SendGroupLeftEmail(user.Email, user.First_Name, group.Group_Name)
+				if err != nil {
+					log.Printf("Failed to send group left email: %v", err)
+				}
+			}()
+		} else {
+			// User was removed by group creator/admin
+			go func() {
+				err := emailService.SendRemovedFromGroupEmail(user.Email, user.First_Name, group.Group_Name)
+				if err != nil {
+					log.Printf("Failed to send removed from group email: %v", err)
+				}
+			}()
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "User removed from group successfully"})
