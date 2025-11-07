@@ -229,7 +229,7 @@ func DeleteGroup(c *gin.Context) {
 			goqu.On(goqu.Ex{"user_group.user_profile_id": goqu.I("user_profile.user_profile_id")}),
 		).
 		Select("user_profile.*").
-		Where(goqu.C("user_group.group_profile_id").Eq(groupID)).
+		Where(goqu.C("group_profile_id").Eq(groupID)).
 		ScanStructs(&groupMembers)
 	if err != nil {
 		log.Printf("Failed to fetch group members for email notifications: %v", err)
