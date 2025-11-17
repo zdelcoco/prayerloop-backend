@@ -31,6 +31,11 @@ func main() {
 	router.GET("/check-username", middlewares.RateLimitMiddleware(5, 5, getKey), controllers.CheckUsernameAvailability)
 	router.GET("/ping", middlewares.RateLimitMiddleware(2, 2, getKey), controllers.Ping)
 
+	router.Static("/static", "./static")
+	router.GET("/privacy", func(c *gin.Context) {
+		c.File("./static/privacy.html")
+	})
+
 	// Password reset endpoints
 	router.POST("/auth/forgot-password", middlewares.RateLimitMiddleware(2, 2, getKey), controllers.ForgotPassword)
 	router.POST("/auth/verify-reset-code", middlewares.RateLimitMiddleware(5, 5, getKey), controllers.VerifyResetCode)
