@@ -15,6 +15,7 @@ import (
 
 	"github.com/PrayerLoop/initializers"
 	"github.com/PrayerLoop/models"
+	"github.com/PrayerLoop/services"
 	"github.com/doug-martin/goqu/v9"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -109,6 +110,16 @@ func PublicUserSignup(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	} else {
+		// Send welcome email to new user
+		emailService := services.GetEmailService()
+		if emailService != nil {
+			err := emailService.SendWelcomeEmail(user.Email, user.First_Name)
+			if err != nil {
+				log.Printf("Failed to send welcome email to %s: %v", user.Email, err)
+				// Don't fail the signup if email fails - just log it
+			}
+		}
+
 		c.JSON(200, gin.H{
 			"message": "User created successfully.",
 			"user":    user,
@@ -185,6 +196,16 @@ func UserSignup(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	} else {
+		// Send welcome email to new user
+		emailService := services.GetEmailService()
+		if emailService != nil {
+			err := emailService.SendWelcomeEmail(user.Email, user.First_Name)
+			if err != nil {
+				log.Printf("Failed to send welcome email to %s: %v", user.Email, err)
+				// Don't fail the signup if email fails - just log it
+			}
+		}
+
 		c.JSON(200, gin.H{
 			"message": "User created successfully.",
 			"user":    user,

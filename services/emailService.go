@@ -221,19 +221,23 @@ func (s *EmailService) SendWelcomeEmail(toEmail string, firstName string) error 
     <div class="content">
         <h2>Welcome, %s!</h2>
 
-        <p>Thank you for joining prayerloop. We're excited to have you in our community of prayer.</p>
+        <p>Thank you so much for downloading prayerloop! I hope that this app blesses you and your prayer life.</p>
+
+        <p>A quick note: prayerloop is a small, one-person team building this app to help believers pray together better. This is an MVP (minimum viable product), which means I'm starting with the core features and frequently adding new functionality based on feedback from users like you.</p>
 
         <p>With prayerloop, you can:</p>
         <ul>
-            <li>Create and manage your personal prayer list</li>
-            <li>Share prayers with groups and friends</li>
-            <li>Track answered prayers and give praise</li>
-            <li>Set prayer reminders and build a consistent prayer habit</li>
+            <li>Organize your prayer requests in one place (no more lost prayers in text threads!)</li>
+            <li>Create private groups with family, friends, or your small group</li>
+            <li>Stay updated with push notifications when new prayers are shared</li>
+            <li>Build a consistent prayer habit with reminders</li>
         </ul>
+
+        <p><strong>Your feedback matters!</strong> If you have suggestions, questions, or run into any issues, please reach out to me at <a href="mailto:support@prayerloop.io" style="color: #90c590;">support@prayerloop.io</a>. I read every message and your input helps shape the future of this app.</p>
 
         <p>Get started by creating your first prayer or joining a prayer group!</p>
 
-        <p>Blessings,<br>The prayerloop Team</p>
+        <p>Blessings,<br>Zach</p>
     </div>
 
     <div class="footer">
