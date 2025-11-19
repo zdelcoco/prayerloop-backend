@@ -1309,3 +1309,167 @@ func UpdateUserProfile(c *gin.Context) {
 		"user":    updatedUser,
 	})
 }
+
+func DeleteUserAccount(c *gin.Context) {
+	currentUser := c.MustGet("currentUser").(models.UserProfile)
+	isAdmin := c.MustGet("admin").(bool)
+
+	userID, err := strconv.Atoi(c.Param("user_profile_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user profile ID", "details": err.Error()})
+		return
+	}
+
+	// Authorization: user can only delete their own account unless they're an admin
+	if userID != currentUser.User_Profile_ID && !isAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to delete this account"})
+		return
+	}
+
+	// Verify the user exists
+	var existingUser models.UserProfile
+	found, err := initializers.DB.From("user_profile").
+		Select("*").
+		Where(goqu.C("user_profile_id").Eq(userID)).
+		ScanStruct(&existingUser)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user", "details": err.Error()})
+		return
+	}
+
+	if !found {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	log.Printf("Starting account deletion for user_profile_id: %d", userID)
+
+	// Helper function to safely delete from a table (handles missing tables gracefully)
+	safeDelete := func(tableName string, condition goqu.Expression) error {
+		_, err := initializers.DB.Delete(tableName).
+			Where(condition).
+			Executor().Exec()
+		if err != nil {
+			// Check if error is "table does not exist" - if so, just log and continue
+			if strings.Contains(err.Error(), "does not exist") {
+				log.Printf("Table %s does not exist, skipping deletion", tableName)
+				return nil
+			}
+			return err
+		}
+		return nil
+	}
+
+	// Begin cascade deletion - order matters to avoid foreign key constraint violations
+
+	// 1. Delete push tokens (may not exist in all databases)
+	err = safeDelete("user_push_tokens", goqu.C("user_profile_id").Eq(userID))
+	if err != nil {
+		log.Printf("Failed to delete user_push_tokens: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete push tokens", "details": err.Error()})
+		return
+	}
+
+	// 2. Delete password reset tokens (may not exist in all databases)
+	err = safeDelete("password_reset_tokens", goqu.C("user_profile_id").Eq(userID))
+	if err != nil {
+		log.Printf("Failed to delete password_reset_tokens: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete password reset tokens", "details": err.Error()})
+		return
+	}
+
+	// 3. Delete user preferences
+	err = safeDelete("user_preferences", goqu.C("user_profile_id").Eq(userID))
+	if err != nil {
+		log.Printf("Failed to delete user_preferences: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user preferences", "details": err.Error()})
+		return
+	}
+
+	// 4. Delete notifications
+	err = safeDelete("notification", goqu.C("user_profile_id").Eq(userID))
+	if err != nil {
+		log.Printf("Failed to delete notifications: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete notifications", "details": err.Error()})
+		return
+	}
+
+	// 5. Delete prayer analytics
+	err = safeDelete("prayer_analytics", goqu.C("user_profile_id").Eq(userID))
+	if err != nil {
+		log.Printf("Failed to delete prayer_analytics: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete prayer analytics", "details": err.Error()})
+		return
+	}
+
+	// 6. Delete prayer session details
+	err = safeDelete("prayer_session_detail", goqu.C("user_profile_id").Eq(userID))
+	if err != nil {
+		log.Printf("Failed to delete prayer_session_detail: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete prayer session details", "details": err.Error()})
+		return
+	}
+
+	// 7. Delete prayer sessions
+	err = safeDelete("prayer_session", goqu.C("user_profile_id").Eq(userID))
+	if err != nil {
+		log.Printf("Failed to delete prayer_session: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete prayer sessions", "details": err.Error()})
+		return
+	}
+
+	// 8. Delete group invites created by or for this user
+	err = safeDelete("group_invite", goqu.Or(
+		goqu.C("created_by").Eq(userID),
+		goqu.C("invited_user_id").Eq(userID),
+	))
+	if err != nil {
+		log.Printf("Failed to delete group_invite: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete group invites", "details": err.Error()})
+		return
+	}
+
+	// 9. Remove user from all groups
+	err = safeDelete("user_group", goqu.C("user_profile_id").Eq(userID))
+	if err != nil {
+		log.Printf("Failed to delete user_group: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove user from groups", "details": err.Error()})
+		return
+	}
+
+	// 10. Delete user's personal prayer access records (access_type = 'user')
+	err = safeDelete("prayer_access", goqu.And(
+		goqu.C("access_type").Eq("user"),
+		goqu.C("access_type_id").Eq(userID),
+	))
+	if err != nil {
+		log.Printf("Failed to delete prayer_access: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete prayer access records", "details": err.Error()})
+		return
+	}
+
+	// 11. Delete prayers created by this user
+	// Note: Group prayers will remain for other group members
+	err = safeDelete("prayer", goqu.C("created_by").Eq(userID))
+	if err != nil {
+		log.Printf("Failed to delete prayers: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete prayers", "details": err.Error()})
+		return
+	}
+
+	// 12. Finally, hard delete the user profile
+	_, err = initializers.DB.Delete("user_profile").
+		Where(goqu.C("user_profile_id").Eq(userID)).
+		Executor().Exec()
+	if err != nil {
+		log.Printf("Failed to delete user profile: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user account", "details": err.Error()})
+		return
+	}
+
+	log.Printf("Successfully hard deleted account for user_profile_id: %d", userID)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Account deleted successfully",
+	})
+}

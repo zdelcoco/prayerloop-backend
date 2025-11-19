@@ -53,6 +53,7 @@ func main() {
 		auth.GET("/users/me", controllers.GetUserProfile)
 		auth.PATCH("/users/:user_profile_id", controllers.UpdateUserProfile)
 		auth.PATCH("/users/:user_profile_id/password", controllers.ChangeUserPassword)
+		auth.DELETE("/users/:user_profile_id/account", controllers.DeleteUserAccount)
 
 		auth.GET("/users/:user_profile_id/groups", controllers.GetUserGroups)
 		auth.PATCH("/users/:user_profile_id/groups/reorder", controllers.ReorderUserGroups)
