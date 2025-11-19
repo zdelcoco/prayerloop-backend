@@ -121,14 +121,29 @@ func JoinGroup(c *gin.Context) {
 		return
 	}
 
+	// Shift all existing groups down by incrementing their group_display_sequence
+	// This makes room for the new group at position 0 (top of list)
+	updateQuery := initializers.DB.Update("user_group").
+		Set(goqu.Record{"group_display_sequence": goqu.L("group_display_sequence + 1")}).
+		Where(goqu.C("user_profile_id").Eq(currentUser.User_Profile_ID))
+
+	_, err = updateQuery.Executor().Exec()
+	if err != nil {
+		log.Println("Failed to update group display sequence:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reorder groups", "details": err.Error()})
+		return
+	}
+
+	// Insert new group at position 0 (top of list)
 	newUserGroupEntry := models.UserGroup{
-		User_Profile_ID:  currentUser.User_Profile_ID,
-		Group_Profile_ID: groupID,
-		Is_Active:        true,
-		Created_By:       groupInvite.Created_By,
-		Updated_By:       groupInvite.Created_By,
-		Datetime_Create:  time.Now(),
-		Datetime_Update:  time.Now(),
+		User_Profile_ID:        currentUser.User_Profile_ID,
+		Group_Profile_ID:       groupID,
+		Is_Active:              true,
+		Group_Display_Sequence: 0,
+		Created_By:             groupInvite.Created_By,
+		Updated_By:             groupInvite.Created_By,
+		Datetime_Create:        time.Now(),
+		Datetime_Update:        time.Now(),
 	}
 
 	insert := initializers.DB.Insert("user_group").Rows(newUserGroupEntry)

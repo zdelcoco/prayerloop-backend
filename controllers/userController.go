@@ -1344,15 +1344,15 @@ func DeleteUserAccount(c *gin.Context) {
 
 	log.Printf("Starting account deletion for user_profile_id: %d", userID)
 
-	// Helper function to safely delete from a table (handles missing tables gracefully)
-	safeDelete := func(tableName string, condition goqu.Expression) error {
+	// Helper function to safely delete from optional tables (handles missing tables gracefully)
+	safeDeleteOptional := func(tableName string, condition goqu.Expression) error {
 		_, err := initializers.DB.Delete(tableName).
 			Where(condition).
 			Executor().Exec()
 		if err != nil {
-			// Check if error is "table does not exist" - if so, just log and continue
-			if strings.Contains(err.Error(), "does not exist") {
-				log.Printf("Table %s does not exist, skipping deletion", tableName)
+			// Check if error is "relation does not exist" - if so, just log and continue
+			if strings.Contains(err.Error(), "relation") && strings.Contains(err.Error(), "does not exist") {
+				log.Printf("Optional table %s does not exist, skipping deletion", tableName)
 				return nil
 			}
 			return err
@@ -1361,68 +1361,81 @@ func DeleteUserAccount(c *gin.Context) {
 	}
 
 	// Begin cascade deletion - order matters to avoid foreign key constraint violations
+	// Based on actual database schema
 
-	// 1. Delete push tokens (may not exist in all databases)
-	err = safeDelete("user_push_tokens", goqu.C("user_profile_id").Eq(userID))
+	// 1. Delete push tokens (optional table - may not exist in all databases)
+	err = safeDeleteOptional("user_push_tokens", goqu.C("user_profile_id").Eq(userID))
 	if err != nil {
 		log.Printf("Failed to delete user_push_tokens: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete push tokens", "details": err.Error()})
 		return
 	}
 
-	// 2. Delete password reset tokens (may not exist in all databases)
-	err = safeDelete("password_reset_tokens", goqu.C("user_profile_id").Eq(userID))
+	// 2. Delete password reset tokens (optional table)
+	err = safeDeleteOptional("password_reset_tokens", goqu.C("user_profile_id").Eq(userID))
 	if err != nil {
 		log.Printf("Failed to delete password_reset_tokens: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete password reset tokens", "details": err.Error()})
 		return
 	}
 
-	// 3. Delete user preferences
-	err = safeDelete("user_preferences", goqu.C("user_profile_id").Eq(userID))
-	if err != nil {
-		log.Printf("Failed to delete user_preferences: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user preferences", "details": err.Error()})
-		return
-	}
-
-	// 4. Delete notifications
-	err = safeDelete("notification", goqu.C("user_profile_id").Eq(userID))
-	if err != nil {
-		log.Printf("Failed to delete notifications: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete notifications", "details": err.Error()})
-		return
-	}
-
-	// 5. Delete prayer analytics
-	err = safeDelete("prayer_analytics", goqu.C("user_profile_id").Eq(userID))
-	if err != nil {
-		log.Printf("Failed to delete prayer_analytics: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete prayer analytics", "details": err.Error()})
-		return
-	}
-
-	// 6. Delete prayer session details
-	err = safeDelete("prayer_session_detail", goqu.C("user_profile_id").Eq(userID))
+	// 3. Delete prayer session details (must delete BEFORE prayer_session due to FK)
+	// prayer_session_detail links to prayer_session, not directly to user
+	_, err = initializers.DB.Delete("prayer_session_detail").
+		Where(goqu.L("prayer_session_id IN (SELECT prayer_session_id FROM prayer_session WHERE user_profile_id = ?)", userID)).
+		Executor().Exec()
 	if err != nil {
 		log.Printf("Failed to delete prayer_session_detail: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete prayer session details", "details": err.Error()})
 		return
 	}
 
-	// 7. Delete prayer sessions
-	err = safeDelete("prayer_session", goqu.C("user_profile_id").Eq(userID))
+	// 4. Delete prayer sessions
+	_, err = initializers.DB.Delete("prayer_session").
+		Where(goqu.C("user_profile_id").Eq(userID)).
+		Executor().Exec()
 	if err != nil {
 		log.Printf("Failed to delete prayer_session: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete prayer sessions", "details": err.Error()})
 		return
 	}
 
-	// 8. Delete group invites created by or for this user
-	err = safeDelete("group_invite", goqu.Or(
-		goqu.C("created_by").Eq(userID),
-		goqu.C("invited_user_id").Eq(userID),
-	))
+	// 5. Delete user stats
+	_, err = initializers.DB.Delete("user_stats").
+		Where(goqu.C("user_profile_id").Eq(userID)).
+		Executor().Exec()
+	if err != nil {
+		log.Printf("Failed to delete user_stats: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user stats", "details": err.Error()})
+		return
+	}
+
+	// 6. Delete user preferences
+	_, err = initializers.DB.Delete("user_preferences").
+		Where(goqu.C("user_profile_id").Eq(userID)).
+		Executor().Exec()
+	if err != nil {
+		log.Printf("Failed to delete user_preferences: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user preferences", "details": err.Error()})
+		return
+	}
+
+	// 7. Delete notifications
+	_, err = initializers.DB.Delete("notification").
+		Where(goqu.C("user_profile_id").Eq(userID)).
+		Executor().Exec()
+	if err != nil {
+		log.Printf("Failed to delete notifications: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete notifications", "details": err.Error()})
+		return
+	}
+
+	// 8. Delete group invites created by this user
+	// Note: group_invite has ON DELETE CASCADE for group_profile_id, so it will auto-delete when groups are deleted
+	// We only need to delete invites created by this user
+	_, err = initializers.DB.Delete("group_invite").
+		Where(goqu.C("created_by").Eq(userID)).
+		Executor().Exec()
 	if err != nil {
 		log.Printf("Failed to delete group_invite: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete group invites", "details": err.Error()})
@@ -1430,7 +1443,9 @@ func DeleteUserAccount(c *gin.Context) {
 	}
 
 	// 9. Remove user from all groups
-	err = safeDelete("user_group", goqu.C("user_profile_id").Eq(userID))
+	_, err = initializers.DB.Delete("user_group").
+		Where(goqu.C("user_profile_id").Eq(userID)).
+		Executor().Exec()
 	if err != nil {
 		log.Printf("Failed to delete user_group: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove user from groups", "details": err.Error()})
@@ -1438,26 +1453,39 @@ func DeleteUserAccount(c *gin.Context) {
 	}
 
 	// 10. Delete user's personal prayer access records (access_type = 'user')
-	err = safeDelete("prayer_access", goqu.And(
-		goqu.C("access_type").Eq("user"),
-		goqu.C("access_type_id").Eq(userID),
-	))
+	_, err = initializers.DB.Delete("prayer_access").
+		Where(
+			goqu.C("access_type").Eq("user"),
+			goqu.C("access_type_id").Eq(userID),
+		).
+		Executor().Exec()
 	if err != nil {
 		log.Printf("Failed to delete prayer_access: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete prayer access records", "details": err.Error()})
 		return
 	}
 
-	// 11. Delete prayers created by this user
+	// 11. Delete prayer analytics for prayers created by this user (optional table)
+	// Must delete BEFORE deleting prayers due to FK constraint
+	err = safeDeleteOptional("prayer_analytics", goqu.L("prayer_id IN (SELECT prayer_id FROM prayer WHERE created_by = ?)", userID))
+	if err != nil {
+		log.Printf("Failed to delete prayer_analytics: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete prayer analytics", "details": err.Error()})
+		return
+	}
+
+	// 12. Delete prayers created by this user
 	// Note: Group prayers will remain for other group members
-	err = safeDelete("prayer", goqu.C("created_by").Eq(userID))
+	_, err = initializers.DB.Delete("prayer").
+		Where(goqu.C("created_by").Eq(userID)).
+		Executor().Exec()
 	if err != nil {
 		log.Printf("Failed to delete prayers: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete prayers", "details": err.Error()})
 		return
 	}
 
-	// 12. Finally, hard delete the user profile
+	// 13. Finally, hard delete the user profile
 	_, err = initializers.DB.Delete("user_profile").
 		Where(goqu.C("user_profile_id").Eq(userID)).
 		Executor().Exec()

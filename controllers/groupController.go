@@ -46,14 +46,29 @@ func CreateGroup(c *gin.Context) {
 
 	group.Group_Profile_ID = insertedID
 
+	// Shift all existing groups down by incrementing their group_display_sequence
+	// This makes room for the new group at position 0 (top of list)
+	updateQuery := initializers.DB.Update("user_group").
+		Set(goqu.Record{"group_display_sequence": goqu.L("group_display_sequence + 1")}).
+		Where(goqu.C("user_profile_id").Eq(user.User_Profile_ID))
+
+	_, err = updateQuery.Executor().Exec()
+	if err != nil {
+		log.Println("Failed to update group display sequence:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reorder groups", "details": err.Error()})
+		return
+	}
+
+	// Insert new group at position 0 (top of list)
 	newEntry := models.UserGroup{
-		User_Profile_ID:  user.User_Profile_ID,
-		Group_Profile_ID: group.Group_Profile_ID,
-		Is_Active:        true,
-		Created_By:       user.User_Profile_ID,
-		Updated_By:       user.User_Profile_ID,
-		Datetime_Create:  time.Now(),
-		Datetime_Update:  time.Now(),
+		User_Profile_ID:        user.User_Profile_ID,
+		Group_Profile_ID:       group.Group_Profile_ID,
+		Is_Active:              true,
+		Group_Display_Sequence: 0,
+		Created_By:             user.User_Profile_ID,
+		Updated_By:             user.User_Profile_ID,
+		Datetime_Create:        time.Now(),
+		Datetime_Update:        time.Now(),
 	}
 
 	userGroupInsert := initializers.DB.Insert("user_group").Rows(newEntry)
@@ -383,14 +398,29 @@ func AddUserToGroup(c *gin.Context) {
 		return
 	}
 
+	// Shift all existing groups down by incrementing their group_display_sequence
+	// This makes room for the new group at position 0 (top of list)
+	updateQuery := initializers.DB.Update("user_group").
+		Set(goqu.Record{"group_display_sequence": goqu.L("group_display_sequence + 1")}).
+		Where(goqu.C("user_profile_id").Eq(userID))
+
+	_, err = updateQuery.Executor().Exec()
+	if err != nil {
+		log.Println("Failed to update group display sequence:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reorder groups", "details": err.Error()})
+		return
+	}
+
+	// Insert new group at position 0 (top of list)
 	newEntry := models.UserGroup{
-		User_Profile_ID:  userID,
-		Group_Profile_ID: groupID,
-		Is_Active:        true,
-		Created_By:       currentUser.User_Profile_ID,
-		Updated_By:       currentUser.User_Profile_ID,
-		Datetime_Create:  time.Now(),
-		Datetime_Update:  time.Now(),
+		User_Profile_ID:        userID,
+		Group_Profile_ID:       groupID,
+		Is_Active:              true,
+		Group_Display_Sequence: 0,
+		Created_By:             currentUser.User_Profile_ID,
+		Updated_By:             currentUser.User_Profile_ID,
+		Datetime_Create:        time.Now(),
+		Datetime_Update:        time.Now(),
 	}
 
 	insert := initializers.DB.Insert("user_group").Rows(newEntry)
