@@ -524,6 +524,7 @@ func GetGroupPrayers(c *gin.Context) {
 		Select(
 			goqu.I("prayer.prayer_id"),
 			goqu.I("prayer_access.prayer_access_id"),
+			goqu.I("prayer_access.display_sequence"),
 			goqu.I("prayer.prayer_type"),
 			goqu.I("prayer.is_private"),
 			goqu.I("prayer.title"),
@@ -547,6 +548,7 @@ func GetGroupPrayers(c *gin.Context) {
 				goqu.Ex{"prayer_access.access_type_id": groupID},
 			),
 		).
+		Order(goqu.I("prayer_access.display_sequence").Asc()).
 		ScanStructsContext(c, &userPrayers)
 
 	if dbErr != nil {
@@ -621,14 +623,32 @@ func CreateGroupPrayer(c *gin.Context) {
 		return
 	}
 
+	// Shift all existing prayers down by incrementing their display_sequence
+	// This makes room for the new prayer at position 0 (top of list)
+	updateQuery := initializers.DB.Update("prayer_access").
+		Set(goqu.Record{"display_sequence": goqu.L("display_sequence + 1")}).
+		Where(
+			goqu.C("access_type").Eq("group"),
+			goqu.C("access_type_id").Eq(groupID),
+		)
+
+	_, err = updateQuery.Executor().Exec()
+	if err != nil {
+		log.Println("Failed to update prayer display sequence:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reorder prayers", "details": err.Error()})
+		return
+	}
+
+	// Insert new prayer at position 0 (top of list)
 	newPrayerAccessEntry := models.PrayerAccess{
-		Prayer_ID:       insertedPrayerID,
-		Access_Type:     "group",
-		Access_Type_ID:  groupID,
-		Created_By:      currentUser.User_Profile_ID,
-		Updated_By:      currentUser.User_Profile_ID,
-		Datetime_Create: time.Now(),
-		Datetime_Update: time.Now(),
+		Prayer_ID:        insertedPrayerID,
+		Access_Type:      "group",
+		Access_Type_ID:   groupID,
+		Display_Sequence: 0,
+		Created_By:       currentUser.User_Profile_ID,
+		Updated_By:       currentUser.User_Profile_ID,
+		Datetime_Create:  time.Now(),
+		Datetime_Update:  time.Now(),
 	}
 
 	prayerAccessInsert := initializers.DB.Insert("prayer_access").Rows(newPrayerAccessEntry).Returning("prayer_access_id")
@@ -644,6 +664,99 @@ func CreateGroupPrayer(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"message": "Prayer created sucessfully!",
 		"prayerId":       insertedPrayerID,
 		"prayerAccessId": insertedPrayerAccessID})
+}
+
+func ReorderGroupPrayers(c *gin.Context) {
+	isAdmin := c.MustGet("admin").(bool)
+
+	groupID, err := strconv.Atoi(c.Param("group_profile_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID", "details": err.Error()})
+		return
+	}
+
+	if !isGroupExists(groupID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Group doesn't exist"})
+		return
+	}
+
+	if !isUserInGroup(c, groupID) && !isAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to reorder this group's prayers"})
+		return
+	}
+
+	var reorderData struct {
+		Prayers []struct {
+			PrayerID        int `json:"prayerId"`
+			DisplaySequence int `json:"displaySequence"`
+		} `json:"prayers"`
+	}
+
+	if err := c.BindJSON(&reorderData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get total count of prayers for this group
+	var totalPrayers int
+	_, err = initializers.DB.From("prayer_access").
+		Select(goqu.COUNT("prayer_access_id")).
+		Where(
+			goqu.C("access_type").Eq("group"),
+			goqu.C("access_type_id").Eq(groupID),
+		).
+		ScanVal(&totalPrayers)
+	if err != nil {
+		log.Println("Failed to count group prayers:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count prayers", "details": err.Error()})
+		return
+	}
+
+	// Validate that all prayers are included in the request
+	if len(reorderData.Prayers) != totalPrayers {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Invalid reorder request: expected %d prayers, got %d. All prayers must be included in reorder request.", totalPrayers, len(reorderData.Prayers)),
+		})
+		return
+	}
+
+	// Validate that all displaySequence values are unique and contiguous
+	sequenceMap := make(map[int]bool)
+	for _, prayer := range reorderData.Prayers {
+		if prayer.DisplaySequence < 0 || prayer.DisplaySequence >= totalPrayers {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("Invalid displaySequence %d: must be between 0 and %d", prayer.DisplaySequence, totalPrayers-1),
+			})
+			return
+		}
+		if sequenceMap[prayer.DisplaySequence] {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("Duplicate displaySequence %d: each prayer must have a unique sequence", prayer.DisplaySequence),
+			})
+			return
+		}
+		sequenceMap[prayer.DisplaySequence] = true
+	}
+
+	// Update each prayer's display_sequence in prayer_access table
+	for _, prayer := range reorderData.Prayers {
+		updateQuery := initializers.DB.Update("prayer_access").
+			Set(goqu.Record{"display_sequence": prayer.DisplaySequence}).
+			Where(
+				goqu.C("prayer_id").Eq(prayer.PrayerID),
+				goqu.C("access_type").Eq("group"),
+				goqu.C("access_type_id").Eq(groupID),
+			)
+
+		_, err := updateQuery.Executor().Exec()
+		if err != nil {
+			log.Println("Failed to update prayer display sequence:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reorder prayers", "details": err.Error()})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Prayers reordered successfully"})
 }
 
 func isUserInGroup(c *gin.Context, groupID int) bool {
