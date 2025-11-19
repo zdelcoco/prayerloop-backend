@@ -22,6 +22,7 @@ type UserPrayer struct {
 	User_Profile_ID    int        `json:"userProfileId" goqu:"skipinsert"`
 	Prayer_ID          int        `json:"prayerId" goqu:"skipinsert"`
 	Prayer_Access_ID   int        `json:"prayerAccessId" goqu:"skipinsert"`
+	Display_Sequence   int        `json:"displaySequence" goqu:"skipinsert"`
 	Prayer_Type        string     `json:"prayerType"`
 	Is_Private         *bool      `json:"isPrivate"`
 	Title              string     `json:"title"`
@@ -47,14 +48,15 @@ type PrayerCreate struct {
 }
 
 type PrayerAccess struct {
-	Prayer_Access_ID int       `json:"prayerAccessId" goqu:"skipinsert"`
-	Prayer_ID        int       `json:"prayerId"`
-	Access_Type      string    `json:"accessType"`
-	Access_Type_ID   int       `json:"accessTypeId"`
-	Datetime_Create  time.Time `json:"datetimeCreate" goqu:"skipinsert"`
-	Datetime_Update  time.Time `json:"datetimeUpdate" goqu:"skipinsert"`
-	Created_By       int       `json:"createdBy"`
-	Updated_By       int       `json:"updatedBy"`
+	Prayer_Access_ID  int       `json:"prayerAccessId" goqu:"skipinsert"`
+	Prayer_ID         int       `json:"prayerId"`
+	Access_Type       string    `json:"accessType"`
+	Access_Type_ID    int       `json:"accessTypeId"`
+	Display_Sequence  int       `json:"displaySequence"`
+	Datetime_Create   time.Time `json:"datetimeCreate" goqu:"skipinsert"`
+	Datetime_Update   time.Time `json:"datetimeUpdate" goqu:"skipinsert"`
+	Created_By        int       `json:"createdBy"`
+	Updated_By        int       `json:"updatedBy"`
 }
 
 type PrayerAccessCreate struct {

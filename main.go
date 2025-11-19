@@ -53,11 +53,14 @@ func main() {
 		auth.GET("/users/me", controllers.GetUserProfile)
 		auth.PATCH("/users/:user_profile_id", controllers.UpdateUserProfile)
 		auth.PATCH("/users/:user_profile_id/password", controllers.ChangeUserPassword)
+		auth.DELETE("/users/:user_profile_id/account", controllers.DeleteUserAccount)
 
 		auth.GET("/users/:user_profile_id/groups", controllers.GetUserGroups)
+		auth.PATCH("/users/:user_profile_id/groups/reorder", controllers.ReorderUserGroups)
 
 		auth.GET("/users/:user_profile_id/prayers", controllers.GetUserPrayers)
 		auth.POST("/users/:user_profile_id/prayers", controllers.CreateUserPrayer)
+		auth.PATCH("/users/:user_profile_id/prayers/reorder", controllers.ReorderUserPrayers)
 
 		auth.GET("/users/:user_profile_id/preferences", controllers.GetUserPreferencesWithDefaults)
 		auth.PATCH("/users/:user_profile_id/preferences/:preference_id", controllers.UpdateUserPreferences)
@@ -78,6 +81,7 @@ func main() {
 
 		auth.GET("/groups/:group_profile_id/prayers", controllers.GetGroupPrayers)
 		auth.POST("/groups/:group_profile_id/prayers", controllers.CreateGroupPrayer)
+		auth.PATCH("/groups/:group_profile_id/prayers/reorder", controllers.ReorderGroupPrayers)
 
 		auth.GET("/groups/:group_profile_id/users", controllers.GetGroupUsers)
 		auth.POST("/groups/:group_profile_id/users/:user_profile_id", controllers.AddUserToGroup)

@@ -328,6 +328,7 @@ func GetUserGroups(c *gin.Context) {
 			"group_profile.created_by",
 			"group_profile.updated_by",
 			"group_profile.deleted",
+			"user_group.group_display_sequence",
 		).
 		InnerJoin(
 			goqu.T("group_profile"),
@@ -339,7 +340,8 @@ func GetUserGroups(c *gin.Context) {
 				goqu.C("is_active").Table("user_group").IsTrue(),
 				goqu.C("is_active").Table("group_profile").IsTrue(),
 			),
-		)
+		).
+		Order(goqu.I("user_group.group_display_sequence").Asc())
 
 	sql, args, err := query.ToSQL()
 	if err != nil {
@@ -364,6 +366,94 @@ func GetUserGroups(c *gin.Context) {
 	c.JSON(http.StatusOK, groups)
 }
 
+func ReorderUserGroups(c *gin.Context) {
+	currentUser := c.MustGet("currentUser").(models.UserProfile)
+	isAdmin := c.MustGet("admin").(bool)
+
+	userID, err := strconv.Atoi(c.Param("user_profile_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user profile ID", "details": err.Error()})
+		return
+	}
+
+	if currentUser.User_Profile_ID != userID && !isAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to reorder this user's groups"})
+		return
+	}
+
+	var reorderData struct {
+		Groups []struct {
+			GroupID         int `json:"groupId"`
+			DisplaySequence int `json:"displaySequence"`
+		} `json:"groups"`
+	}
+
+	if err := c.BindJSON(&reorderData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get total count of groups for this user
+	var totalGroups int
+	_, err = initializers.DB.From("user_group").
+		Select(goqu.COUNT("user_group_id")).
+		Where(
+			goqu.C("user_profile_id").Eq(userID),
+			goqu.C("is_active").IsTrue(),
+		).
+		ScanVal(&totalGroups)
+	if err != nil {
+		log.Println("Failed to count user groups:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count groups", "details": err.Error()})
+		return
+	}
+
+	// Validate that all groups are included in the request
+	if len(reorderData.Groups) != totalGroups {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Invalid reorder request: expected %d groups, got %d. All groups must be included in reorder request.", totalGroups, len(reorderData.Groups)),
+		})
+		return
+	}
+
+	// Validate that all displaySequence values are unique and contiguous
+	sequenceMap := make(map[int]bool)
+	for _, group := range reorderData.Groups {
+		if group.DisplaySequence < 0 || group.DisplaySequence >= totalGroups {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("Invalid displaySequence %d: must be between 0 and %d", group.DisplaySequence, totalGroups-1),
+			})
+			return
+		}
+		if sequenceMap[group.DisplaySequence] {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("Duplicate displaySequence %d: each group must have a unique sequence", group.DisplaySequence),
+			})
+			return
+		}
+		sequenceMap[group.DisplaySequence] = true
+	}
+
+	// Update each group's display_sequence in user_group table
+	for _, group := range reorderData.Groups {
+		updateQuery := initializers.DB.Update("user_group").
+			Set(goqu.Record{"group_display_sequence": group.DisplaySequence}).
+			Where(
+				goqu.C("group_profile_id").Eq(group.GroupID),
+				goqu.C("user_profile_id").Eq(userID),
+			)
+
+		_, err := updateQuery.Executor().Exec()
+		if err != nil {
+			log.Println("Failed to update group display sequence:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reorder groups", "details": err.Error()})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Groups reordered successfully"})
+}
+
 func GetUserPrayers(c *gin.Context) {
 	currentUser := c.MustGet("currentUser").(models.UserProfile)
 	isAdmin := c.MustGet("admin").(bool)
@@ -386,6 +476,7 @@ func GetUserPrayers(c *gin.Context) {
 			goqu.L("?", currentUser.User_Profile_ID).As("user_profile_id"),
 			goqu.I("prayer.prayer_id"),
 			goqu.I("prayer_access.prayer_access_id"),
+			goqu.I("prayer_access.display_sequence"),
 			goqu.I("prayer.prayer_type"),
 			goqu.I("prayer.is_private"),
 			goqu.I("prayer.title"),
@@ -410,7 +501,7 @@ func GetUserPrayers(c *gin.Context) {
 				goqu.Ex{"prayer.deleted": false},
 			),
 		).
-		Order(goqu.I("prayer.prayer_id").Asc()).
+		Order(goqu.I("prayer_access.display_sequence").Asc()).
 		ScanStructsContext(c, &userPrayers)
 
 	if dbErr != nil {
@@ -477,14 +568,32 @@ func CreateUserPrayer(c *gin.Context) {
 		return
 	}
 
+	// Shift all existing prayers down by incrementing their display_sequence
+	// This makes room for the new prayer at position 0 (top of list)
+	updateQuery := initializers.DB.Update("prayer_access").
+		Set(goqu.Record{"display_sequence": goqu.L("display_sequence + 1")}).
+		Where(
+			goqu.C("access_type").Eq("user"),
+			goqu.C("access_type_id").Eq(userID),
+		)
+
+	_, err = updateQuery.Executor().Exec()
+	if err != nil {
+		log.Println("Failed to update prayer display sequence:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reorder prayers", "details": err.Error()})
+		return
+	}
+
+	// Insert new prayer at position 0 (top of list)
 	newPrayerAccessEntry := models.PrayerAccess{
-		Prayer_ID:       insertedPrayerID,
-		Access_Type:     "user",
-		Access_Type_ID:  userID,
-		Created_By:      currentUser.User_Profile_ID,
-		Updated_By:      currentUser.User_Profile_ID,
-		Datetime_Create: time.Now(),
-		Datetime_Update: time.Now(),
+		Prayer_ID:        insertedPrayerID,
+		Access_Type:      "user",
+		Access_Type_ID:   userID,
+		Display_Sequence: 0,
+		Created_By:       currentUser.User_Profile_ID,
+		Updated_By:       currentUser.User_Profile_ID,
+		Datetime_Create:  time.Now(),
+		Datetime_Update:  time.Now(),
 	}
 
 	prayerAccessInsert := initializers.DB.Insert("prayer_access").Rows(newPrayerAccessEntry).Returning("prayer_access_id")
@@ -500,6 +609,95 @@ func CreateUserPrayer(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"message": "Prayer created sucessfully!",
 		"prayerId":       insertedPrayerID,
 		"prayerAccessId": insertedPrayerAccessID})
+}
+
+func ReorderUserPrayers(c *gin.Context) {
+	currentUser := c.MustGet("currentUser").(models.UserProfile)
+	isAdmin := c.MustGet("admin").(bool)
+
+	userID, err := strconv.Atoi(c.Param("user_profile_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user profile ID", "details": err.Error()})
+		return
+	}
+
+	if currentUser.User_Profile_ID != userID && !isAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to reorder this user's prayers"})
+		return
+	}
+
+	var reorderData struct {
+		Prayers []struct {
+			PrayerID        int `json:"prayerId"`
+			DisplaySequence int `json:"displaySequence"`
+		} `json:"prayers"`
+	}
+
+	if err := c.BindJSON(&reorderData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get total count of prayers for this user
+	var totalPrayers int
+	_, err = initializers.DB.From("prayer_access").
+		Select(goqu.COUNT("prayer_access_id")).
+		Where(
+			goqu.C("access_type").Eq("user"),
+			goqu.C("access_type_id").Eq(userID),
+		).
+		ScanVal(&totalPrayers)
+	if err != nil {
+		log.Println("Failed to count user prayers:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count prayers", "details": err.Error()})
+		return
+	}
+
+	// Validate that all prayers are included in the request
+	if len(reorderData.Prayers) != totalPrayers {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Invalid reorder request: expected %d prayers, got %d. All prayers must be included in reorder request.", totalPrayers, len(reorderData.Prayers)),
+		})
+		return
+	}
+
+	// Validate that all displaySequence values are unique and contiguous
+	sequenceMap := make(map[int]bool)
+	for _, prayer := range reorderData.Prayers {
+		if prayer.DisplaySequence < 0 || prayer.DisplaySequence >= totalPrayers {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("Invalid displaySequence %d: must be between 0 and %d", prayer.DisplaySequence, totalPrayers-1),
+			})
+			return
+		}
+		if sequenceMap[prayer.DisplaySequence] {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("Duplicate displaySequence %d: each prayer must have a unique sequence", prayer.DisplaySequence),
+			})
+			return
+		}
+		sequenceMap[prayer.DisplaySequence] = true
+	}
+
+	// Update each prayer's display_sequence in prayer_access table
+	for _, prayer := range reorderData.Prayers {
+		updateQuery := initializers.DB.Update("prayer_access").
+			Set(goqu.Record{"display_sequence": prayer.DisplaySequence}).
+			Where(
+				goqu.C("prayer_id").Eq(prayer.PrayerID),
+				goqu.C("access_type").Eq("user"),
+				goqu.C("access_type_id").Eq(userID),
+			)
+
+		_, err := updateQuery.Executor().Exec()
+		if err != nil {
+			log.Println("Failed to update prayer display sequence:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reorder prayers", "details": err.Error()})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Prayers reordered successfully"})
 }
 
 func GetUserPreferencesWithDefaults(c *gin.Context) {
@@ -1109,5 +1307,197 @@ func UpdateUserProfile(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "User profile updated successfully",
 		"user":    updatedUser,
+	})
+}
+
+func DeleteUserAccount(c *gin.Context) {
+	currentUser := c.MustGet("currentUser").(models.UserProfile)
+	isAdmin := c.MustGet("admin").(bool)
+
+	userID, err := strconv.Atoi(c.Param("user_profile_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user profile ID", "details": err.Error()})
+		return
+	}
+
+	// Authorization: user can only delete their own account unless they're an admin
+	if userID != currentUser.User_Profile_ID && !isAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to delete this account"})
+		return
+	}
+
+	// Verify the user exists
+	var existingUser models.UserProfile
+	found, err := initializers.DB.From("user_profile").
+		Select("*").
+		Where(goqu.C("user_profile_id").Eq(userID)).
+		ScanStruct(&existingUser)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user", "details": err.Error()})
+		return
+	}
+
+	if !found {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	log.Printf("Starting account deletion for user_profile_id: %d", userID)
+
+	// Helper function to safely delete from optional tables (handles missing tables gracefully)
+	safeDeleteOptional := func(tableName string, condition goqu.Expression) error {
+		_, err := initializers.DB.Delete(tableName).
+			Where(condition).
+			Executor().Exec()
+		if err != nil {
+			// Check if error is "relation does not exist" - if so, just log and continue
+			if strings.Contains(err.Error(), "relation") && strings.Contains(err.Error(), "does not exist") {
+				log.Printf("Optional table %s does not exist, skipping deletion", tableName)
+				return nil
+			}
+			return err
+		}
+		return nil
+	}
+
+	// Begin cascade deletion - order matters to avoid foreign key constraint violations
+	// Based on actual database schema
+
+	// 1. Delete push tokens (optional table - may not exist in all databases)
+	err = safeDeleteOptional("user_push_tokens", goqu.C("user_profile_id").Eq(userID))
+	if err != nil {
+		log.Printf("Failed to delete user_push_tokens: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete push tokens", "details": err.Error()})
+		return
+	}
+
+	// 2. Delete password reset tokens (optional table)
+	err = safeDeleteOptional("password_reset_tokens", goqu.C("user_profile_id").Eq(userID))
+	if err != nil {
+		log.Printf("Failed to delete password_reset_tokens: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete password reset tokens", "details": err.Error()})
+		return
+	}
+
+	// 3. Delete prayer session details (must delete BEFORE prayer_session due to FK)
+	// prayer_session_detail links to prayer_session, not directly to user
+	_, err = initializers.DB.Delete("prayer_session_detail").
+		Where(goqu.L("prayer_session_id IN (SELECT prayer_session_id FROM prayer_session WHERE user_profile_id = ?)", userID)).
+		Executor().Exec()
+	if err != nil {
+		log.Printf("Failed to delete prayer_session_detail: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete prayer session details", "details": err.Error()})
+		return
+	}
+
+	// 4. Delete prayer sessions
+	_, err = initializers.DB.Delete("prayer_session").
+		Where(goqu.C("user_profile_id").Eq(userID)).
+		Executor().Exec()
+	if err != nil {
+		log.Printf("Failed to delete prayer_session: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete prayer sessions", "details": err.Error()})
+		return
+	}
+
+	// 5. Delete user stats
+	_, err = initializers.DB.Delete("user_stats").
+		Where(goqu.C("user_profile_id").Eq(userID)).
+		Executor().Exec()
+	if err != nil {
+		log.Printf("Failed to delete user_stats: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user stats", "details": err.Error()})
+		return
+	}
+
+	// 6. Delete user preferences
+	_, err = initializers.DB.Delete("user_preferences").
+		Where(goqu.C("user_profile_id").Eq(userID)).
+		Executor().Exec()
+	if err != nil {
+		log.Printf("Failed to delete user_preferences: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user preferences", "details": err.Error()})
+		return
+	}
+
+	// 7. Delete notifications
+	_, err = initializers.DB.Delete("notification").
+		Where(goqu.C("user_profile_id").Eq(userID)).
+		Executor().Exec()
+	if err != nil {
+		log.Printf("Failed to delete notifications: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete notifications", "details": err.Error()})
+		return
+	}
+
+	// 8. Delete group invites created by this user
+	// Note: group_invite has ON DELETE CASCADE for group_profile_id, so it will auto-delete when groups are deleted
+	// We only need to delete invites created by this user
+	_, err = initializers.DB.Delete("group_invite").
+		Where(goqu.C("created_by").Eq(userID)).
+		Executor().Exec()
+	if err != nil {
+		log.Printf("Failed to delete group_invite: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete group invites", "details": err.Error()})
+		return
+	}
+
+	// 9. Remove user from all groups
+	_, err = initializers.DB.Delete("user_group").
+		Where(goqu.C("user_profile_id").Eq(userID)).
+		Executor().Exec()
+	if err != nil {
+		log.Printf("Failed to delete user_group: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove user from groups", "details": err.Error()})
+		return
+	}
+
+	// 10. Delete user's personal prayer access records (access_type = 'user')
+	_, err = initializers.DB.Delete("prayer_access").
+		Where(
+			goqu.C("access_type").Eq("user"),
+			goqu.C("access_type_id").Eq(userID),
+		).
+		Executor().Exec()
+	if err != nil {
+		log.Printf("Failed to delete prayer_access: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete prayer access records", "details": err.Error()})
+		return
+	}
+
+	// 11. Delete prayer analytics for prayers created by this user (optional table)
+	// Must delete BEFORE deleting prayers due to FK constraint
+	err = safeDeleteOptional("prayer_analytics", goqu.L("prayer_id IN (SELECT prayer_id FROM prayer WHERE created_by = ?)", userID))
+	if err != nil {
+		log.Printf("Failed to delete prayer_analytics: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete prayer analytics", "details": err.Error()})
+		return
+	}
+
+	// 12. Delete prayers created by this user
+	// Note: Group prayers will remain for other group members
+	_, err = initializers.DB.Delete("prayer").
+		Where(goqu.C("created_by").Eq(userID)).
+		Executor().Exec()
+	if err != nil {
+		log.Printf("Failed to delete prayers: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete prayers", "details": err.Error()})
+		return
+	}
+
+	// 13. Finally, hard delete the user profile
+	_, err = initializers.DB.Delete("user_profile").
+		Where(goqu.C("user_profile_id").Eq(userID)).
+		Executor().Exec()
+	if err != nil {
+		log.Printf("Failed to delete user profile: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user account", "details": err.Error()})
+		return
+	}
+
+	log.Printf("Successfully hard deleted account for user_profile_id: %d", userID)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Account deleted successfully",
 	})
 }
