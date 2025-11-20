@@ -92,13 +92,14 @@ func MockAdminUserWithPassword() models.UserProfile {
 // MockGroupProfile creates a sample group for testing
 func MockGroupProfile() models.GroupProfile {
 	return models.GroupProfile{
-		Group_Profile_ID:  1,
-		Group_Name:        "Test Group",
-		Group_Description: "A test group",
-		Is_Active:         true,
-		Created_By:        1,
-		Updated_By:        1,
-		Datetime_Create:   time.Now(),
-		Datetime_Update:   time.Now(),
+		Group_Profile_ID:       1,
+		Group_Name:             "Test Group",
+		Group_Description:      "A test group",
+		Is_Active:              true,
+		Created_By:             1,
+		Updated_By:             1,
+		Datetime_Create:        time.Now(),
+		Datetime_Update:        time.Now(),
+		Group_Display_Sequence: 0,
 	}
 }
