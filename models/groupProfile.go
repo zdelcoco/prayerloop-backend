@@ -12,7 +12,6 @@ type GroupProfile struct {
 	Created_By           int       `json:"createdBy"`
 	Updated_By           int       `json:"updatedBy"`
 	Deleted              bool      `json:"deleted" goqu:"skipinsert"`
-	Group_Display_Sequence int     `json:"groupDisplaySequence" goqu:"skipinsert"`
 }
 
 type GroupCreate struct {
