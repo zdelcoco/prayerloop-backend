@@ -255,19 +255,6 @@ func generate6DigitCode() (string, error) {
 	return code, nil
 }
 
-// Helper function to generate a secure temporary token
-func generateSecureToken() (string, error) {
-	// Generate 32 random bytes
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-
-	// Encode as base64
-	token := base64.URLEncoding.EncodeToString(bytes)
-	return token, nil
-}
-
 // Helper function to validate temporary token
 // In a production system, you might want to store these tokens in the database
 // or use JWT with expiration
