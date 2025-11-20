@@ -64,6 +64,10 @@ func main() {
 		auth.POST("/users/:user_profile_id/prayers", controllers.CreateUserPrayer)
 		auth.PATCH("/users/:user_profile_id/prayers/reorder", controllers.ReorderUserPrayers)
 
+		auth.GET("/users/:user_profile_id/categories", controllers.GetUserCategories)
+		auth.POST("/users/:user_profile_id/categories", controllers.CreateUserCategory)
+		auth.PATCH("/users/:user_profile_id/categories/reorder", controllers.ReorderUserCategories)
+
 		auth.GET("/users/:user_profile_id/preferences", controllers.GetUserPreferencesWithDefaults)
 		auth.PATCH("/users/:user_profile_id/preferences/:preference_id", controllers.UpdateUserPreferences)
 
@@ -85,6 +89,10 @@ func main() {
 		auth.POST("/groups/:group_profile_id/prayers", controllers.CreateGroupPrayer)
 		auth.PATCH("/groups/:group_profile_id/prayers/reorder", controllers.ReorderGroupPrayers)
 
+		auth.GET("/groups/:group_profile_id/categories", controllers.GetGroupCategories)
+		auth.POST("/groups/:group_profile_id/categories", controllers.CreateGroupCategory)
+		auth.PATCH("/groups/:group_profile_id/categories/reorder", controllers.ReorderGroupCategories)
+
 		auth.GET("/groups/:group_profile_id/users", controllers.GetGroupUsers)
 		auth.POST("/groups/:group_profile_id/users/:user_profile_id", controllers.AddUserToGroup)
 		auth.DELETE("/groups/:group_profile_id/users/:user_profile_id", controllers.RemoveUserFromGroup)
@@ -98,6 +106,12 @@ func main() {
 		auth.DELETE("/prayers/:prayer_id", controllers.DeletePrayer)
 		auth.POST("/prayers/:prayer_id/access", controllers.AddPrayerAccess)
 		auth.DELETE("/prayers/:prayer_id/access/:prayer_access_id", controllers.RemovePrayerAccess)
+
+		// category routes
+		auth.PUT("/categories/:prayer_category_id", controllers.UpdateCategory)
+		auth.DELETE("/categories/:prayer_category_id", controllers.DeleteCategory)
+		auth.POST("/categories/:prayer_category_id/prayers/:prayer_access_id", controllers.AddPrayerToCategory)
+		auth.DELETE("/categories/:prayer_category_id/prayers/:prayer_access_id", controllers.RemovePrayerFromCategory)
 
 		//admin only routes
 		admin := auth.Group("/")
