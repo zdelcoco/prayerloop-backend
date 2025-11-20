@@ -75,7 +75,7 @@ func TestCreateGroup(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
@@ -172,7 +172,7 @@ func TestGetGroup(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
@@ -246,7 +246,7 @@ func TestGetAllGroups(t *testing.T) {
 
 			if !tt.expectError && tt.hasGroups {
 				var response []models.GroupProfile
-				json.Unmarshal(w.Body.Bytes(), &response)
+				_ = json.Unmarshal(w.Body.Bytes(), &response)
 				assert.Greater(t, len(response), 0)
 			}
 		})
@@ -339,7 +339,7 @@ func TestUpdateGroup(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
@@ -458,7 +458,7 @@ func TestDeleteGroup(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
@@ -528,17 +528,17 @@ func TestGetGroupUsers(t *testing.T) {
 
 			if tt.expectError {
 				var response map[string]interface{}
-				json.Unmarshal(w.Body.Bytes(), &response)
+				_ = json.Unmarshal(w.Body.Bytes(), &response)
 				assert.NotNil(t, response["error"])
 			} else if tt.hasUsers {
 				// Response should be an array of users
 				var users []interface{}
-				json.Unmarshal(w.Body.Bytes(), &users)
+				_ = json.Unmarshal(w.Body.Bytes(), &users)
 				assert.Greater(t, len(users), 0)
 			} else {
 				// No users found returns a message
 				var response map[string]interface{}
-				json.Unmarshal(w.Body.Bytes(), &response)
+				_ = json.Unmarshal(w.Body.Bytes(), &response)
 				assert.NotNil(t, response["message"])
 			}
 		})
@@ -657,7 +657,7 @@ func TestAddUserToGroup(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
@@ -785,7 +785,7 @@ func TestRemoveUserFromGroup(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
@@ -1084,7 +1084,7 @@ func TestCreateGroupPrayer(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
@@ -1284,7 +1284,7 @@ func TestReorderGroupPrayers(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])

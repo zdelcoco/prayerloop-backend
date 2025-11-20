@@ -1028,7 +1028,7 @@ func TestGetUserGroups(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
@@ -1100,7 +1100,7 @@ func TestGetUserPrayers(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
@@ -1177,7 +1177,7 @@ func TestGetUserPreferencesWithDefaults(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
@@ -1314,7 +1314,7 @@ func TestPublicUserSignup(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
@@ -1430,7 +1430,7 @@ func TestUserSignup(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
@@ -1542,7 +1542,7 @@ func TestCreateUserPrayer(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
@@ -1688,7 +1688,7 @@ func TestReorderUserGroups(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
@@ -1803,7 +1803,7 @@ func TestReorderUserPrayers(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
@@ -1897,7 +1897,7 @@ func TestGetUserPreferences(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
@@ -2077,7 +2077,7 @@ func TestUpdateUserPreferences(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
@@ -2171,7 +2171,7 @@ func TestStorePushToken(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])

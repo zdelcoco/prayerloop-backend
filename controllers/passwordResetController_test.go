@@ -127,7 +127,7 @@ func TestForgotPassword(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
@@ -330,7 +330,7 @@ func TestVerifyResetCode(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
@@ -509,7 +509,7 @@ func TestResetPassword(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])

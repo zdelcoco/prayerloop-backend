@@ -107,11 +107,11 @@ func TestGetUserNotifications(t *testing.T) {
 
 			if tt.expectError {
 				var response map[string]interface{}
-				json.Unmarshal(w.Body.Bytes(), &response)
+				_ = json.Unmarshal(w.Body.Bytes(), &response)
 				assert.NotNil(t, response["error"])
 			} else {
 				var notifications []interface{}
-				json.Unmarshal(w.Body.Bytes(), &notifications)
+				_ = json.Unmarshal(w.Body.Bytes(), &notifications)
 				if tt.hasNotifications {
 					assert.Greater(t, len(notifications), 0)
 				} else {
@@ -262,7 +262,7 @@ func TestToggleUserNotificationStatus(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
@@ -358,7 +358,7 @@ func TestSendPushNotification(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])

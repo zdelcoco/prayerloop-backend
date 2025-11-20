@@ -248,12 +248,12 @@ func (s *PushNotificationService) SendMulticast(tokens []string, payload Notific
 	ctx, cancel := context.WithTimeout(context.Background(), 10)
 	defer cancel()
 
-	response, err := s.fcmClient.SendMulticast(ctx, message)
+	response, err := s.fcmClient.SendEachForMulticast(ctx, message)
 	if err != nil {
 		return fmt.Errorf("failed to send FCM multicast: %v", err)
 	}
 
-	log.Printf("Successfully sent FCM multicast. Success: %d, Failure: %d", 
+	log.Printf("Successfully sent FCM multicast. Success: %d, Failure: %d",
 		response.SuccessCount, response.FailureCount)
 
 	// Log any failures

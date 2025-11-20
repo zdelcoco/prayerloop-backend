@@ -126,11 +126,11 @@ func TestGetPrayer(t *testing.T) {
 
 			if tt.expectError {
 				var response map[string]interface{}
-				json.Unmarshal(w.Body.Bytes(), &response)
+				_ = json.Unmarshal(w.Body.Bytes(), &response)
 				assert.NotNil(t, response["error"])
 			} else {
 				var prayer map[string]interface{}
-				json.Unmarshal(w.Body.Bytes(), &prayer)
+				_ = json.Unmarshal(w.Body.Bytes(), &prayer)
 				assert.NotNil(t, prayer["prayerId"]) // JSON uses camelCase
 			}
 		})
@@ -195,7 +195,7 @@ func TestGetPrayers(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.hasPrayers {
 				prayers := response["prayers"].([]interface{})
@@ -384,7 +384,7 @@ func TestAddPrayerAccess(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
@@ -597,7 +597,7 @@ func TestRemovePrayerAccess(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
@@ -717,7 +717,7 @@ func TestUpdatePrayer(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
@@ -846,7 +846,7 @@ func TestDeletePrayer(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			var response map[string]interface{}
-			json.Unmarshal(w.Body.Bytes(), &response)
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 			if tt.expectError {
 				assert.NotNil(t, response["error"])
