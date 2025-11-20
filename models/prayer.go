@@ -19,22 +19,26 @@ type Prayer struct {
 }
 
 type UserPrayer struct {
-	User_Profile_ID    int        `json:"userProfileId" goqu:"skipinsert"`
-	Prayer_ID          int        `json:"prayerId" goqu:"skipinsert"`
-	Prayer_Access_ID   int        `json:"prayerAccessId" goqu:"skipinsert"`
-	Display_Sequence   int        `json:"displaySequence" goqu:"skipinsert"`
-	Prayer_Type        string     `json:"prayerType"`
-	Is_Private         *bool      `json:"isPrivate"`
-	Title              string     `json:"title"`
-	Prayer_Description string     `json:"prayerDescription"`
-	Is_Answered        *bool      `json:"isAnswered"`
-	Prayer_Priority    *int       `json:"prayerPriority"`
-	Datetime_Answered  *time.Time `json:"datetimeAnswered"`
-	Created_By         int        `json:"createdBy"`
-	Datetime_Create    time.Time  `json:"datetimeCreate" goqu:"skipinsert"`
-	Updated_By         int        `json:"updatedBy"`
-	Datetime_Update    time.Time  `json:"datetimeUpdate" goqu:"skipinsert"`
-	Deleted            bool       `json:"deleted" goqu:"skipinsert"`
+	User_Profile_ID      int        `json:"userProfileId" goqu:"skipinsert"`
+	Prayer_ID            int        `json:"prayerId" goqu:"skipinsert"`
+	Prayer_Access_ID     int        `json:"prayerAccessId" goqu:"skipinsert"`
+	Display_Sequence     int        `json:"displaySequence" goqu:"skipinsert"`
+	Prayer_Type          string     `json:"prayerType"`
+	Is_Private           *bool      `json:"isPrivate"`
+	Title                string     `json:"title"`
+	Prayer_Description   string     `json:"prayerDescription"`
+	Is_Answered          *bool      `json:"isAnswered"`
+	Prayer_Priority      *int       `json:"prayerPriority"`
+	Datetime_Answered    *time.Time `json:"datetimeAnswered"`
+	Created_By           int        `json:"createdBy"`
+	Datetime_Create      time.Time  `json:"datetimeCreate" goqu:"skipinsert"`
+	Updated_By           int        `json:"updatedBy"`
+	Datetime_Update      time.Time  `json:"datetimeUpdate" goqu:"skipinsert"`
+	Deleted              bool       `json:"deleted" goqu:"skipinsert"`
+	Prayer_Category_ID   *int       `json:"prayerCategoryId,omitempty" goqu:"skipinsert"`
+	Category_Name        *string    `json:"categoryName,omitempty" goqu:"skipinsert"`
+	Category_Color       *string    `json:"categoryColor,omitempty" goqu:"skipinsert"`
+	Category_Display_Seq *int       `json:"categoryDisplaySequence,omitempty" goqu:"skipinsert"`
 }
 
 type PrayerCreate struct {

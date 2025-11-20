@@ -354,6 +354,9 @@ func GetUserGroups(c *gin.Context) {
 	var groups []models.GroupProfile
 	err = initializers.DB.ScanStructs(&groups, sql, args...)
 	if err != nil {
+		log.Printf("ERROR scanning groups for user %d: %v", userID, err)
+		log.Printf("SQL was: %s", sql)
+		log.Printf("Args were: %v", args)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user groups", "details": err.Error()})
 		return
 	}
@@ -489,10 +492,22 @@ func GetUserPrayers(c *gin.Context) {
 			goqu.I("prayer.updated_by"),
 			goqu.I("prayer.datetime_update"),
 			goqu.I("prayer.deleted"),
+			goqu.I("prayer_category.prayer_category_id"),
+			goqu.I("prayer_category.category_name"),
+			goqu.I("prayer_category.category_color"),
+			goqu.I("prayer_category.display_sequence").As("category_display_seq"),
 		).
 		Join(
 			goqu.T("prayer"),
 			goqu.On(goqu.Ex{"prayer_access.prayer_id": goqu.I("prayer.prayer_id")}),
+		).
+		LeftJoin(
+			goqu.T("prayer_category_item"),
+			goqu.On(goqu.Ex{"prayer_access.prayer_access_id": goqu.I("prayer_category_item.prayer_access_id")}),
+		).
+		LeftJoin(
+			goqu.T("prayer_category"),
+			goqu.On(goqu.Ex{"prayer_category_item.prayer_category_id": goqu.I("prayer_category.prayer_category_id")}),
 		).
 		Where(
 			goqu.And(
