@@ -9,6 +9,7 @@ and this project uses a date-based versioning scheme: `[year].[month].[sequence]
 ## [Unreleased]
 
 ### Added
+
 - Comprehensive test coverage for controllers and middleware
 - Controller tests: groupController, userController, inviteController, notificationController
 - Middleware tests: authMiddleware, rateLimitMiddleware
@@ -19,6 +20,7 @@ and this project uses a date-based versioning scheme: `[year].[month].[sequence]
 ## [2025.11.3] - 2025-11-19
 
 ### Added
+
 - **Delete Account Endpoint** - `DELETE /users/:id/account`
   - Cascade deletes all user data (prayers, groups, memberships)
   - Sends confirmation email before deletion
@@ -37,27 +39,23 @@ and this project uses a date-based versioning scheme: `[year].[month].[sequence]
   - Per-user ordering (each user can have their own order)
 
 ### Changed
+
 - **Versioning Convention** - Switched from semantic versioning to date-based versioning
   - Format: `[year].[month].[sequence]`
   - Aligns with mobile app versioning
 
 ### Fixed
+
 - Rate limiting improvements for delete account endpoint
 - Validation improvements for reorder endpoints
 
-## [2025.10.2] - 2025-10-25
+## [0.0.1] - 2025-11-16
 
 ### Added
+
 - Environment variable configuration for production API URL
 - CORS configuration for production domain
 
-### Fixed
-- Production deployment configuration
-- Environment-specific configuration loading
-
-## [2025.10.1] - 2025-10-20
-
-### Added
 - **Core API Endpoints**
   - User authentication (`POST /login`)
   - User signup (`POST /users`, `POST /public/signup`)
@@ -111,7 +109,13 @@ and this project uses a date-based versioning scheme: `[year].[month].[sequence]
   - Group invitation emails
   - Group management notifications (leave, delete, remove)
 
+### Fixed
+
+- Production deployment configuration
+- Environment-specific configuration loading
+
 ### Security
+
 - JWT token authentication (24-hour expiration)
 - Rate limiting on all endpoints
 - Password hashing with bcrypt
@@ -119,6 +123,7 @@ and this project uses a date-based versioning scheme: `[year].[month].[sequence]
 - CORS configuration
 
 ### Database
+
 - PostgreSQL with direct SQL queries (no ORM)
 - Connection pooling
 - Prepared statements for security
@@ -126,17 +131,18 @@ and this project uses a date-based versioning scheme: `[year].[month].[sequence]
 ## Version History
 
 - **2025.11.3** - Current release with delete account and reordering
-- **2025.10.2** - Production configuration fixes
-- **2025.10.1** - Initial MVP release
+- **0.0.1** - Initial MVP release
 
 ---
 
 ## Migration Notes
 
-### Upgrading to 2025.11.3 from 2025.10.2
+### Upgrading to 2025.11.3 from 0.0.1
+
 - Database migration required for `display_sequence` columns
 - Run migration: `002_add_display_sequence_to_prayer_access.sql`
 - Run migration: `002_add_group_display_sequence_to_user_group.sql`
 
 ### API Breaking Changes
+
 None - all new endpoints are additive
