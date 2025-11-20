@@ -227,12 +227,12 @@ func TestGetAllGroups(t *testing.T) {
 			if tt.isAdmin {
 				if tt.hasGroups {
 					now := time.Now()
-					rows := sqlmock.NewRows([]string{"group_profile_id", "group_name", "group_description", "is_active", "datetime_create", "datetime_update", "created_by", "updated_by", "deleted", "group_display_sequence"}).
-						AddRow(1, "Group 1", "Description 1", true, now, now, 1, 1, false, 0).
-						AddRow(2, "Group 2", "Description 2", true, now, now, 1, 1, false, 1)
+					rows := sqlmock.NewRows([]string{"group_profile_id", "group_name", "group_description", "is_active", "datetime_create", "datetime_update", "created_by", "updated_by", "deleted"}).
+						AddRow(1, "Group 1", "Description 1", true, now, now, 1, 1, false).
+						AddRow(2, "Group 2", "Description 2", true, now, now, 1, 1, false)
 					mock.ExpectQuery("SELECT").WillReturnRows(rows)
 				} else {
-					mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"group_profile_id", "group_name", "group_description", "is_active", "datetime_create", "datetime_update", "created_by", "updated_by", "deleted", "group_display_sequence"}))
+					mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"group_profile_id", "group_name", "group_description", "is_active", "datetime_create", "datetime_update", "created_by", "updated_by", "deleted"}))
 				}
 			}
 
