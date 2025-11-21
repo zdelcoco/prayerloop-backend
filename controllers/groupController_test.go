@@ -536,10 +536,10 @@ func TestGetGroupUsers(t *testing.T) {
 				_ = json.Unmarshal(w.Body.Bytes(), &users)
 				assert.Greater(t, len(users), 0)
 			} else {
-				// No users found returns a message
-				var response map[string]interface{}
-				_ = json.Unmarshal(w.Body.Bytes(), &response)
-				assert.NotNil(t, response["message"])
+				// No users found returns an empty array
+				var users []interface{}
+				_ = json.Unmarshal(w.Body.Bytes(), &users)
+				assert.Equal(t, 0, len(users))
 			}
 		})
 	}

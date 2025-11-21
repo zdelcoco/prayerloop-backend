@@ -349,9 +349,9 @@ func GetGroupUsers(c *gin.Context) {
 		return
 	}
 
-	if len(users) == 0 {
-		c.JSON(http.StatusOK, gin.H{"message": "No users found for this group"})
-		return
+	// Always return an array, even if empty (for consistent client-side handling)
+	if users == nil {
+		users = []models.UserProfile{}
 	}
 
 	c.JSON(http.StatusOK, users)
