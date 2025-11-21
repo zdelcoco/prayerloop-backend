@@ -361,9 +361,9 @@ func GetUserGroups(c *gin.Context) {
 		return
 	}
 
-	if len(groups) == 0 {
-		c.JSON(http.StatusOK, gin.H{"message": "No groups found for this user"})
-		return
+	// Always return an array, even if empty (for consistent client-side handling)
+	if groups == nil {
+		groups = []models.GroupProfile{}
 	}
 
 	c.JSON(http.StatusOK, groups)
