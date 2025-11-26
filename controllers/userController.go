@@ -28,11 +28,8 @@ func PublicUserSignup(c *gin.Context) {
 		return
 	}
 
-	// Validate required fields
+	// Validate required fields (username is optional - defaults to email)
 	var missingFields []string
-	if user.Username == "" {
-		missingFields = append(missingFields, "username")
-	}
 	if user.Password == "" {
 		missingFields = append(missingFields, "password")
 	}
@@ -42,9 +39,7 @@ func PublicUserSignup(c *gin.Context) {
 	if user.First_Name == "" {
 		missingFields = append(missingFields, "firstName")
 	}
-	if user.Last_Name == "" {
-		missingFields = append(missingFields, "lastName")
-	}
+	// lastName is now optional
 
 	if len(missingFields) > 0 {
 		var errorMsg string
@@ -55,6 +50,11 @@ func PublicUserSignup(c *gin.Context) {
 		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": errorMsg})
 		return
+	}
+
+	// If username is not provided, default to email
+	if user.Username == "" {
+		user.Username = user.Email
 	}
 
 	// Check if username already exists
@@ -241,28 +241,36 @@ func UserLogin(c *gin.Context) {
 		return
 	}
 
+	// Validate that either email or username is provided
+	if user.Email == "" && user.Username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Email or username is required"})
+		return
+	}
+
 	var dbUser models.UserProfile
-	_, err := initializers.DB.From("user_profile").Select("*").Where(goqu.C("username").Eq(user.Username)).ScanStruct(&dbUser)
+	var found bool
+	var err error
+
+	// Email takes precedence if provided
+	if user.Email != "" {
+		found, err = initializers.DB.From("user_profile").Select("*").Where(goqu.C("email").Eq(user.Email)).ScanStruct(&dbUser)
+	} else {
+		found, err = initializers.DB.From("user_profile").Select("*").Where(goqu.C("username").Eq(user.Username)).ScanStruct(&dbUser)
+	}
+
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// passwordHash, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
-	// if err != nil {
-	// 	c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
-	// 	return
-	// }
-
-	// update := initializers.DB.Update("user_profile").Set(goqu.Record{"password": string(passwordHash)}).Where(goqu.C("user_profile_id").Eq(dbUser.User_Profile_ID)).Executor()
-	// if _, err := update.Exec(); err != nil {
-	// 	c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update password"})
-	// 	return
-	// }
+	if !found {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		return
+	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(dbUser.Password), []byte(user.Password))
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid password", "details": err.Error()})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
 		return
 	}
 

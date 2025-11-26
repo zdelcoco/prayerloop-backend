@@ -1214,6 +1214,32 @@ func TestPublicUserSignup(t *testing.T) {
 			expectError:    false,
 		},
 		{
+			name: "successful signup without username - defaults to email",
+			signupData: models.UserProfileSignup{
+				Password:     "password123",
+				Email:        "newuser@example.com",
+				First_Name:   "New",
+				Last_Name:    "User",
+				Phone_Number: "1234567890",
+			},
+			mockUsername:   0, // Username (email) available
+			mockEmail:      0, // Email available
+			expectedStatus: http.StatusOK,
+			expectError:    false,
+		},
+		{
+			name: "successful signup without lastName - optional field",
+			signupData: models.UserProfileSignup{
+				Password:   "password123",
+				Email:      "newuser@example.com",
+				First_Name: "New",
+			},
+			mockUsername:   0,
+			mockEmail:      0,
+			expectedStatus: http.StatusOK,
+			expectError:    false,
+		},
+		{
 			name: "username already exists",
 			signupData: models.UserProfileSignup{
 				Username:     "existinguser",
@@ -1244,18 +1270,6 @@ func TestPublicUserSignup(t *testing.T) {
 			expectError:    true,
 		},
 		{
-			name: "missing required fields - username",
-			signupData: models.UserProfileSignup{
-				Password:     "password123",
-				Email:        "newuser@example.com",
-				First_Name:   "New",
-				Last_Name:    "User",
-				Phone_Number: "1234567890",
-			},
-			expectedStatus: http.StatusBadRequest,
-			expectError:    true,
-		},
-		{
 			name: "missing required fields - password",
 			signupData: models.UserProfileSignup{
 				Username:     "newuser",
@@ -1268,9 +1282,19 @@ func TestPublicUserSignup(t *testing.T) {
 			expectError:    true,
 		},
 		{
-			name: "missing multiple required fields",
+			name: "missing required fields - email",
 			signupData: models.UserProfileSignup{
-				Username: "newuser",
+				Password:   "password123",
+				First_Name: "New",
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectError:    true,
+		},
+		{
+			name: "missing required fields - firstName",
+			signupData: models.UserProfileSignup{
+				Password: "password123",
+				Email:    "newuser@example.com",
 			},
 			expectedStatus: http.StatusBadRequest,
 			expectError:    true,
@@ -1282,12 +1306,11 @@ func TestPublicUserSignup(t *testing.T) {
 			_, mock, cleanup := SetupTestDB(t)
 			defer cleanup()
 
-			// Only mock database queries for valid requests
-			if tt.signupData.Username != "" && tt.signupData.Password != "" &&
-				tt.signupData.Email != "" && tt.signupData.First_Name != "" &&
-				tt.signupData.Last_Name != "" {
+			// Only mock database queries for valid requests (required fields: password, email, firstName)
+			if tt.signupData.Password != "" &&
+				tt.signupData.Email != "" && tt.signupData.First_Name != "" {
 
-				// Mock username check
+				// Mock username check (username defaults to email if not provided)
 				mock.ExpectQuery("SELECT").
 					WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(tt.mockUsername))
 
