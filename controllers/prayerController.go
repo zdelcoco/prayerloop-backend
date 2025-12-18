@@ -343,6 +343,17 @@ func RemovePrayerAccess(c *gin.Context) {
 	if existingPrayerAccess.Access_Type == "group" {
 		var group models.GroupProfile
 		groupFound, err := initializers.DB.From("group_profile").
+			Select(
+				"group_profile_id",
+				"group_name",
+				"group_description",
+				"is_active",
+				"datetime_create",
+				"datetime_update",
+				"created_by",
+				"updated_by",
+				"deleted",
+			).
 			Where(goqu.C("group_profile_id").Eq(existingPrayerAccess.Access_Type_ID)).
 			ScanStruct(&group)
 

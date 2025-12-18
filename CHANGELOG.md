@@ -6,16 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project uses a date-based versioning scheme: `[year].[month].[sequence]`
 (e.g., 2025.11.3 is the third release in November 2025).
 
-## [Unreleased]
+## [2025.12.1] - 2025-12-18
 
 ### Added
 
-- Comprehensive test coverage for controllers and middleware
-- Controller tests: groupController, userController, inviteController, notificationController
-- Middleware tests: authMiddleware, rateLimitMiddleware
-- ~75% overall test coverage
-- GitHub Actions workflow for automated testing and linting
-- golangci-lint configuration for code quality
+- User push notifications on group activity (prayer added, user added/removed)
+
+### Fixed
+
+- Bug preventing user from deleting prayer from group
 
 ## [2025.11.3] - 2025-11-19
 
