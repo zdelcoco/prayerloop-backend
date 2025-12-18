@@ -525,6 +525,44 @@ func RemoveUserFromGroup(c *gin.Context) {
 		}
 	}
 
+	// Send push notification to remaining group members
+	go func() {
+		memberIDs, err := GetOtherGroupMemberIDs(groupID, userID)
+		if err != nil {
+			log.Printf("Failed to get group member IDs for notification: %v", err)
+			return
+		}
+
+		if len(memberIDs) == 0 {
+			return
+		}
+
+		pushService := services.GetPushNotificationService()
+		if pushService == nil {
+			log.Println("Push notification service not available")
+			return
+		}
+
+		displayName := user.First_Name
+		if displayName == "" {
+			displayName = user.Username
+		}
+
+		payload := services.NotificationPayload{
+			Title: group.Group_Name,
+			Body:  fmt.Sprintf("%s has left the group", displayName),
+			Data: map[string]string{
+				"type":    "group_member_left",
+				"groupId": strconv.Itoa(groupID),
+			},
+		}
+
+		err = pushService.SendNotificationToUsers(memberIDs, payload)
+		if err != nil {
+			log.Printf("Failed to send group leave notifications: %v", err)
+		}
+	}()
+
 	c.JSON(http.StatusOK, gin.H{"message": "User removed from group successfully"})
 }
 
@@ -703,6 +741,51 @@ func CreateGroupPrayer(c *gin.Context) {
 		return
 	}
 
+	// Send push notification to other group members
+	go func() {
+		groupName, err := GetGroupNameByID(groupID)
+		if err != nil {
+			log.Printf("Failed to get group name for notification: %v", err)
+			return
+		}
+
+		memberIDs, err := GetOtherGroupMemberIDs(groupID, currentUser.User_Profile_ID)
+		if err != nil {
+			log.Printf("Failed to get group member IDs for notification: %v", err)
+			return
+		}
+
+		if len(memberIDs) == 0 {
+			return
+		}
+
+		pushService := services.GetPushNotificationService()
+		if pushService == nil {
+			log.Println("Push notification service not available")
+			return
+		}
+
+		displayName := currentUser.First_Name
+		if displayName == "" {
+			displayName = currentUser.Username
+		}
+
+		payload := services.NotificationPayload{
+			Title: groupName,
+			Body:  fmt.Sprintf("%s added a new prayer", displayName),
+			Data: map[string]string{
+				"type":     "group_prayer_added",
+				"groupId":  strconv.Itoa(groupID),
+				"prayerId": strconv.Itoa(insertedPrayerID),
+			},
+		}
+
+		err = pushService.SendNotificationToUsers(memberIDs, payload)
+		if err != nil {
+			log.Printf("Failed to send group prayer notifications: %v", err)
+		}
+	}()
+
 	c.JSON(http.StatusCreated, gin.H{"message": "Prayer created sucessfully!",
 		"prayerId":       insertedPrayerID,
 		"prayerAccessId": insertedPrayerAccessID})
@@ -845,4 +928,45 @@ func isGroupExists(groupID int) bool {
 
 	return false
 
+}
+
+// GetOtherGroupMemberIDs returns the user IDs of all active group members except the specified user.
+// This is used internally for sending push notifications to group members.
+func GetOtherGroupMemberIDs(groupID int, excludeUserID int) ([]int, error) {
+	var userIDs []int
+	err := initializers.DB.From("user_group").
+		Select("user_profile_id").
+		Where(
+			goqu.And(
+				goqu.C("group_profile_id").Eq(groupID),
+				goqu.C("is_active").IsTrue(),
+				goqu.C("user_profile_id").Neq(excludeUserID),
+			),
+		).
+		ScanVals(&userIDs)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get group member IDs: %v", err)
+	}
+
+	return userIDs, nil
+}
+
+// GetGroupNameByID returns the name of a group by its ID.
+// This is used internally for push notification messages.
+func GetGroupNameByID(groupID int) (string, error) {
+	var groupName string
+	found, err := initializers.DB.From("group_profile").
+		Select("group_name").
+		Where(goqu.C("group_profile_id").Eq(groupID)).
+		ScanVal(&groupName)
+
+	if err != nil {
+		return "", fmt.Errorf("failed to get group name: %v", err)
+	}
+	if !found {
+		return "", fmt.Errorf("group not found")
+	}
+
+	return groupName, nil
 }
