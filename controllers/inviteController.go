@@ -12,6 +12,7 @@ import (
 
 	"github.com/PrayerLoop/initializers"
 	"github.com/PrayerLoop/models"
+	"github.com/PrayerLoop/services"
 	"github.com/doug-martin/goqu/v9"
 	"github.com/gin-gonic/gin"
 )
@@ -168,6 +169,50 @@ func JoinGroup(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to mark group_invite as inactive", "details": updateErr.Error()})
 		return
 	}
+
+	// Send push notification to other group members
+	go func() {
+		groupName, err := GetGroupNameByID(groupID)
+		if err != nil {
+			log.Printf("Failed to get group name for notification: %v", err)
+			return
+		}
+
+		memberIDs, err := GetOtherGroupMemberIDs(groupID, currentUser.User_Profile_ID)
+		if err != nil {
+			log.Printf("Failed to get group member IDs for notification: %v", err)
+			return
+		}
+
+		if len(memberIDs) == 0 {
+			return
+		}
+
+		pushService := services.GetPushNotificationService()
+		if pushService == nil {
+			log.Println("Push notification service not available")
+			return
+		}
+
+		displayName := currentUser.First_Name
+		if displayName == "" {
+			displayName = currentUser.Username
+		}
+
+		payload := services.NotificationPayload{
+			Title: groupName,
+			Body:  fmt.Sprintf("%s has joined the group", displayName),
+			Data: map[string]string{
+				"type":    "group_member_joined",
+				"groupId": strconv.Itoa(groupID),
+			},
+		}
+
+		err = pushService.SendNotificationToUsers(memberIDs, payload)
+		if err != nil {
+			log.Printf("Failed to send group join notifications: %v", err)
+		}
+	}()
 
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Successfully joined group %d", groupID)})
 }

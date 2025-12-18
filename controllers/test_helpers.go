@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/PrayerLoop/initializers"
@@ -28,6 +29,8 @@ func SetupTestDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock, func()) {
 
 	// Return cleanup function
 	cleanup := func() {
+		// Small delay to allow goroutines (like push notifications) to complete
+		time.Sleep(10 * time.Millisecond)
 		db.Close()
 		initializers.DB = originalDB
 	}

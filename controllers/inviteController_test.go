@@ -338,6 +338,14 @@ func TestJoinGroup(t *testing.T) {
 								// Mock invite deactivation
 								mock.ExpectExec("UPDATE \"group_invite\"").
 									WillReturnResult(sqlmock.NewResult(0, 1))
+
+								// Mock GetGroupNameByID for push notification (runs in goroutine)
+								mock.ExpectQuery("SELECT \"group_name\" FROM \"group_profile\"").
+									WillReturnRows(sqlmock.NewRows([]string{"group_name"}).AddRow("Test Group"))
+
+								// Mock GetOtherGroupMemberIDs for push notification (runs in goroutine)
+								mock.ExpectQuery("SELECT \"user_profile_id\" FROM \"user_group\"").
+									WillReturnRows(sqlmock.NewRows([]string{"user_profile_id"}).AddRow(2).AddRow(3))
 							}
 						}
 					} else if !tt.invalidJSON {
