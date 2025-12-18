@@ -146,6 +146,17 @@ func GetAllGroups(c *gin.Context) {
 
 	var groups []models.GroupProfile
 	err := initializers.DB.From("group_profile").
+		Select(
+			"group_profile_id",
+			"group_name",
+			"group_description",
+			"is_active",
+			"datetime_create",
+			"datetime_update",
+			"created_by",
+			"updated_by",
+			"deleted",
+		).
 		ScanStructs(&groups)
 
 	if err != nil {
