@@ -690,6 +690,14 @@ func CreateGroupPrayer(c *gin.Context) {
 		return
 	}
 
+	// Get or create a "self" prayer_subject for the user creating the prayer
+	prayerSubjectID, err := GetOrCreateSelfPrayerSubject(currentUser)
+	if err != nil {
+		log.Println("Failed to get/create self prayer_subject:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create prayer subject", "details": err.Error()})
+		return
+	}
+
 	newPrayerEntry := models.Prayer{
 		Prayer_Type:        newPrayer.Prayer_Type,
 		Is_Private:         newPrayer.Is_Private,
@@ -698,6 +706,7 @@ func CreateGroupPrayer(c *gin.Context) {
 		Is_Answered:        newPrayer.Is_Answered,
 		Datetime_Answered:  newPrayer.Datetime_Answered,
 		Prayer_Priority:    newPrayer.Prayer_Priority,
+		Prayer_Subject_ID:  &prayerSubjectID,
 		Created_By:         currentUser.User_Profile_ID,
 		Updated_By:         currentUser.User_Profile_ID,
 		Datetime_Create:    time.Now(),

@@ -567,6 +567,14 @@ func CreateUserPrayer(c *gin.Context) {
 		return
 	}
 
+	// Get or create a "self" prayer_subject for the user
+	prayerSubjectID, err := GetOrCreateSelfPrayerSubject(currentUser)
+	if err != nil {
+		log.Println("Failed to get/create self prayer_subject:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create prayer subject", "details": err.Error()})
+		return
+	}
+
 	newPrayerEntry := models.Prayer{
 		Prayer_Type:        newPrayer.Prayer_Type,
 		Is_Private:         newPrayer.Is_Private,
@@ -575,6 +583,7 @@ func CreateUserPrayer(c *gin.Context) {
 		Is_Answered:        newPrayer.Is_Answered,
 		Datetime_Answered:  newPrayer.Datetime_Answered,
 		Prayer_Priority:    newPrayer.Prayer_Priority,
+		Prayer_Subject_ID:  &prayerSubjectID,
 		Created_By:         currentUser.User_Profile_ID,
 		Updated_By:         currentUser.User_Profile_ID,
 		Datetime_Create:    time.Now(),
@@ -1523,4 +1532,60 @@ func DeleteUserAccount(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Account deleted successfully",
 	})
+}
+
+// GetOrCreateSelfPrayerSubject finds or creates a "self" prayer_subject for a user.
+// A "self" prayer_subject is one where the user is praying for themselves.
+// This is identified by: created_by = user_profile_id AND user_profile_id = user_profile_id (linked to self)
+func GetOrCreateSelfPrayerSubject(user models.UserProfile) (int, error) {
+	// First, try to find an existing "self" prayer_subject
+	var existingSubjectID int
+	found, err := initializers.DB.From("prayer_subject").
+		Select("prayer_subject_id").
+		Where(
+			goqu.And(
+				goqu.C("created_by").Eq(user.User_Profile_ID),
+				goqu.C("user_profile_id").Eq(user.User_Profile_ID),
+			),
+		).
+		ScanVal(&existingSubjectID)
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to check for existing self prayer_subject: %v", err)
+	}
+
+	if found {
+		return existingSubjectID, nil
+	}
+
+	// No existing "self" prayer_subject, create one
+	displayName := strings.TrimSpace(user.First_Name + " " + user.Last_Name)
+	if displayName == "" {
+		displayName = user.Username
+	}
+	if displayName == "" {
+		displayName = "Me"
+	}
+
+	newSubject := models.PrayerSubject{
+		Prayer_Subject_Type:         "individual",
+		Prayer_Subject_Display_Name: displayName,
+		User_Profile_ID:             &user.User_Profile_ID,
+		Use_Linked_User_Photo:       true,
+		Link_Status:                 "linked",
+		Display_Sequence:            0,
+		Created_By:                  user.User_Profile_ID,
+		Updated_By:                  user.User_Profile_ID,
+	}
+
+	insert := initializers.DB.Insert("prayer_subject").Rows(newSubject).Returning("prayer_subject_id")
+
+	var insertedID int
+	_, err = insert.Executor().ScanVal(&insertedID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create self prayer_subject: %v", err)
+	}
+
+	log.Printf("Created self prayer_subject %d for user %d", insertedID, user.User_Profile_ID)
+	return insertedID, nil
 }

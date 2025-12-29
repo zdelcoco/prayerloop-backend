@@ -14,6 +14,7 @@ type UserProfile struct {
 	Phone_Verified     bool      `json:"phoneVerified" goqu:"skipinsert"`
 	Verification_Token *string   `json:"-"`
 	Admin              bool      `json:"admin" goqu:"skipinsert"`
+	Photo_S3_Key       *string   `json:"photoS3Key" goqu:"skipinsert"`
 	Created_By         int       `json:"createdBy"`
 	Datetime_Create    time.Time `json:"datetimeCreate" goqu:"skipinsert"`
 	Updated_By         int       `json:"updatedBy"`

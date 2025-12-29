@@ -1540,6 +1540,10 @@ func TestCreateUserPrayer(t *testing.T) {
 			defer cleanup()
 
 			if tt.userID != "invalid" && !tt.expectError {
+				// Mock prayer_subject lookup - return existing subject ID
+				mock.ExpectQuery("SELECT \"prayer_subject_id\" FROM \"prayer_subject\"").
+					WillReturnRows(sqlmock.NewRows([]string{"prayer_subject_id"}).AddRow(1))
+
 				// Mock prayer insert - return prayer ID
 				mock.ExpectQuery("INSERT INTO \"prayer\"").
 					WillReturnRows(sqlmock.NewRows([]string{"prayer_id"}).AddRow(1))

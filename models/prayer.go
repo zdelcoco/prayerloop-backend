@@ -10,6 +10,7 @@ type Prayer struct {
 	Prayer_Description string     `json:"prayerDescription"`
 	Is_Answered        *bool      `json:"isAnswered"`
 	Prayer_Priority    *int       `json:"prayerPriority"`
+	Prayer_Subject_ID  *int       `json:"prayerSubjectId"`
 	Datetime_Answered  *time.Time `json:"datetimeAnswered"`
 	Created_By         int        `json:"createdBy"`
 	Datetime_Create    time.Time  `json:"datetimeCreate" goqu:"skipinsert"`
@@ -29,6 +30,7 @@ type UserPrayer struct {
 	Prayer_Description   string     `json:"prayerDescription"`
 	Is_Answered          *bool      `json:"isAnswered"`
 	Prayer_Priority      *int       `json:"prayerPriority"`
+	Prayer_Subject_ID    *int       `json:"prayerSubjectId" goqu:"skipinsert"`
 	Datetime_Answered    *time.Time `json:"datetimeAnswered"`
 	Created_By           int        `json:"createdBy"`
 	Datetime_Create      time.Time  `json:"datetimeCreate" goqu:"skipinsert"`

@@ -1052,6 +1052,10 @@ func TestCreateGroupPrayer(t *testing.T) {
 					}
 
 					if (tt.userInGroup || tt.isAdmin) && tt.prayerData != nil && len(tt.prayerData) > 0 {
+						// Mock prayer_subject lookup - return existing subject ID
+						mock.ExpectQuery("SELECT \"prayer_subject_id\" FROM \"prayer_subject\"").
+							WillReturnRows(sqlmock.NewRows([]string{"prayer_subject_id"}).AddRow(1))
+
 						// Mock prayer insert
 						mock.ExpectQuery("INSERT INTO \"prayer\"").
 							WillReturnRows(sqlmock.NewRows([]string{"prayer_id"}).AddRow(1))
