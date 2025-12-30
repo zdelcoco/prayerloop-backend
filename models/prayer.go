@@ -51,6 +51,7 @@ type PrayerCreate struct {
 	Is_Answered        *bool      `json:"isAnswered"`
 	Datetime_Answered  *time.Time `json:"datetimeAnswered"`
 	Prayer_Priority    *int       `json:"prayerPriority"`
+	Prayer_Subject_ID  *int       `json:"prayerSubjectId"`
 }
 
 type PrayerAccess struct {

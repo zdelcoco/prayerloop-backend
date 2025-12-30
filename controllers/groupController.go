@@ -690,12 +690,39 @@ func CreateGroupPrayer(c *gin.Context) {
 		return
 	}
 
-	// Get or create a "self" prayer_subject for the user creating the prayer
-	prayerSubjectID, err := GetOrCreateSelfPrayerSubject(currentUser)
-	if err != nil {
-		log.Println("Failed to get/create self prayer_subject:", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create prayer subject", "details": err.Error()})
-		return
+	// Determine prayer_subject_id - use provided value or fall back to self subject
+	var prayerSubjectID int
+	if newPrayer.Prayer_Subject_ID != nil {
+		// Verify the prayer subject exists and belongs to the current user
+		var subjectExists bool
+		subjectExists, err = initializers.DB.From("prayer_subject").
+			Select(goqu.L("1")).
+			Where(
+				goqu.C("prayer_subject_id").Eq(*newPrayer.Prayer_Subject_ID),
+				goqu.C("created_by").Eq(currentUser.User_Profile_ID),
+			).
+			ScanVal(new(int))
+
+		if err != nil {
+			log.Println("Failed to verify prayer_subject:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify prayer subject", "details": err.Error()})
+			return
+		}
+
+		if !subjectExists {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Prayer subject not found or does not belong to you"})
+			return
+		}
+
+		prayerSubjectID = *newPrayer.Prayer_Subject_ID
+	} else {
+		// Fall back to self subject for backwards compatibility
+		prayerSubjectID, err = GetOrCreateSelfPrayerSubject(currentUser)
+		if err != nil {
+			log.Println("Failed to get/create self prayer_subject:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create prayer subject", "details": err.Error()})
+			return
+		}
 	}
 
 	newPrayerEntry := models.Prayer{
