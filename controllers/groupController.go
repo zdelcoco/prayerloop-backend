@@ -171,14 +171,32 @@ func UpdateGroup(c *gin.Context) {
 	user := c.MustGet("currentUser").(models.UserProfile)
 	admin := c.MustGet("admin").(bool)
 
-	if !admin {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Only admins can update groups"})
-		return
-	}
-
 	groupID, err := strconv.Atoi(c.Param("group_profile_id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID", "details": err.Error()})
+		return
+	}
+
+	// Check if user is the group creator
+	var group models.GroupProfile
+	found, err := initializers.DB.From("group_profile").
+		Select("created_by").
+		Where(goqu.C("group_profile_id").Eq(groupID)).
+		ScanStruct(&group)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch group", "details": err.Error()})
+		return
+	}
+
+	if !found {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Group not found"})
+		return
+	}
+
+	// Only allow if user is admin OR the group creator
+	if !admin && group.Created_By != user.User_Profile_ID {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Only the group creator or an admin can update this group"})
 		return
 	}
 
@@ -192,7 +210,6 @@ func UpdateGroup(c *gin.Context) {
 		Set(goqu.Record{
 			"group_name":        updateGroup.Group_Name,
 			"group_description": updateGroup.Group_Description,
-			"is_active":         updateGroup.Is_Active,
 			"updated_by":        user.User_Profile_ID,
 			"datetime_update":   time.Now(),
 		}).
@@ -616,6 +633,8 @@ func GetGroupPrayers(c *gin.Context) {
 			goqu.I("prayer.updated_by"),
 			goqu.I("prayer.datetime_update"),
 			goqu.I("prayer.deleted"),
+			goqu.I("prayer.prayer_subject_id"),
+			goqu.I("prayer_subject.prayer_subject_display_name"),
 			goqu.I("prayer_category.prayer_category_id"),
 			goqu.I("prayer_category.category_name"),
 			goqu.I("prayer_category.category_color"),
@@ -624,6 +643,10 @@ func GetGroupPrayers(c *gin.Context) {
 		Join(
 			goqu.T("prayer_access"),
 			goqu.On(goqu.Ex{"prayer.prayer_id": goqu.I("prayer_access.prayer_id")}),
+		).
+		LeftJoin(
+			goqu.T("prayer_subject"),
+			goqu.On(goqu.Ex{"prayer.prayer_subject_id": goqu.I("prayer_subject.prayer_subject_id")}),
 		).
 		LeftJoin(
 			goqu.T("prayer_category_item"),
