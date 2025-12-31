@@ -118,8 +118,12 @@ func main() {
 
 		// prayer subject membership routes
 		auth.GET("/prayer-subjects/:prayer_subject_id/members", controllers.GetSubjectMembers)
+		auth.GET("/prayer-subjects/:prayer_subject_id/parents", controllers.GetSubjectParentGroups)
 		auth.POST("/prayer-subjects/:prayer_subject_id/members", controllers.AddMemberToSubject)
 		auth.DELETE("/prayer-subjects/:prayer_subject_id/members/:member_prayer_subject_id", controllers.RemoveMemberFromSubject)
+
+		// prayer subject prayers routes
+		auth.PATCH("/prayer-subjects/:prayer_subject_id/prayers/reorder", controllers.ReorderPrayerSubjectPrayers)
 
 		// prayer subject link routes
 		auth.DELETE("/prayer-subjects/:prayer_subject_id/link", controllers.RemovePrayerSubjectLink)

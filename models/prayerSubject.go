@@ -49,6 +49,7 @@ type PrayerSubjectCreate struct {
 // PrayerSubjectUpdate is the input type for updating a prayer subject
 type PrayerSubjectUpdate struct {
 	Prayer_Subject_Display_Name *string `json:"prayerSubjectDisplayName"`
+	Prayer_Subject_Type         *string `json:"prayerSubjectType"`
 	Notes                       *string `json:"notes"`
 	Photo_S3_Key                *string `json:"photoS3Key"`
 	Use_Linked_User_Photo       *bool   `json:"useLinkedUserPhoto"`

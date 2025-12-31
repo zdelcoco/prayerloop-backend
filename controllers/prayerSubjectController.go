@@ -308,6 +308,28 @@ func UpdatePrayerSubject(c *gin.Context) {
 		updateRecord["prayer_subject_display_name"] = displayName
 	}
 
+	if updateData.Prayer_Subject_Type != nil {
+		subjectType := strings.TrimSpace(*updateData.Prayer_Subject_Type)
+		// Validate type is one of the allowed values
+		if subjectType != "individual" && subjectType != "family" && subjectType != "group" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prayer subject type. Must be 'individual', 'family', or 'group'"})
+			return
+		}
+		// If changing from family/group to individual, check for existing members
+		if subjectType == "individual" && (existingSubject.Prayer_Subject_Type == "family" || existingSubject.Prayer_Subject_Type == "group") {
+			var memberCount int
+			_, err := initializers.DB.From("prayer_subject_membership").
+				Select(goqu.COUNT("*")).
+				Where(goqu.C("group_prayer_subject_id").Eq(subjectID)).
+				ScanVal(&memberCount)
+			if err == nil && memberCount > 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Cannot change to individual type while members exist. Remove all members first."})
+				return
+			}
+		}
+		updateRecord["prayer_subject_type"] = subjectType
+	}
+
 	if updateData.Notes != nil {
 		updateRecord["notes"] = updateData.Notes
 	}
@@ -578,6 +600,114 @@ func ReorderPrayerSubjects(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Prayer subjects reordered successfully"})
 }
 
+// ReorderPrayerSubjectPrayers allows manual ordering of prayers within a prayer subject
+func ReorderPrayerSubjectPrayers(c *gin.Context) {
+	currentUser := c.MustGet("currentUser").(models.UserProfile)
+	isAdmin := c.MustGet("admin").(bool)
+
+	subjectID, err := strconv.Atoi(c.Param("prayer_subject_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prayer subject ID", "details": err.Error()})
+		return
+	}
+
+	// Verify the prayer subject exists and user has permission
+	var existingSubject models.PrayerSubject
+	found, err := initializers.DB.From("prayer_subject").
+		Select("*").
+		Where(goqu.C("prayer_subject_id").Eq(subjectID)).
+		ScanStruct(&existingSubject)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch prayer subject", "details": err.Error()})
+		return
+	}
+
+	if !found {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Prayer subject not found"})
+		return
+	}
+
+	// Check permission - must be creator or admin
+	if existingSubject.Created_By != currentUser.User_Profile_ID && !isAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to reorder prayers in this prayer subject"})
+		return
+	}
+
+	var reorderData struct {
+		Prayers []struct {
+			PrayerID        int `json:"prayerId"`
+			DisplaySequence int `json:"displaySequence"`
+		} `json:"prayers"`
+	}
+
+	if err := c.BindJSON(&reorderData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get total count of prayers for this prayer subject
+	var totalPrayers int
+	_, err = initializers.DB.From("prayer").
+		Select(goqu.COUNT("prayer_id")).
+		Where(goqu.C("prayer_subject_id").Eq(subjectID)).
+		ScanVal(&totalPrayers)
+	if err != nil {
+		log.Println("Failed to count prayers:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count prayers", "details": err.Error()})
+		return
+	}
+
+	// Validate that all prayers are included in the request
+	if len(reorderData.Prayers) != totalPrayers {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Invalid reorder request: expected %d prayers, got %d. All prayers for this subject must be included.", totalPrayers, len(reorderData.Prayers)),
+		})
+		return
+	}
+
+	// Validate that all displaySequence values are unique and contiguous
+	sequenceMap := make(map[int]bool)
+	for _, prayer := range reorderData.Prayers {
+		if prayer.DisplaySequence < 0 || prayer.DisplaySequence >= totalPrayers {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("Invalid displaySequence %d: must be between 0 and %d", prayer.DisplaySequence, totalPrayers-1),
+			})
+			return
+		}
+		if sequenceMap[prayer.DisplaySequence] {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("Duplicate displaySequence %d: each value must be unique", prayer.DisplaySequence),
+			})
+			return
+		}
+		sequenceMap[prayer.DisplaySequence] = true
+	}
+
+	// Update each prayer's display_sequence
+	for _, prayer := range reorderData.Prayers {
+		updateQuery := initializers.DB.Update("prayer").
+			Set(goqu.Record{
+				"display_sequence": prayer.DisplaySequence,
+				"updated_by":       currentUser.User_Profile_ID,
+				"datetime_update":  time.Now(),
+			}).
+			Where(
+				goqu.C("prayer_id").Eq(prayer.PrayerID),
+				goqu.C("prayer_subject_id").Eq(subjectID),
+			)
+
+		_, err := updateQuery.Executor().Exec()
+		if err != nil {
+			log.Println("Failed to update prayer display sequence:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reorder prayers", "details": err.Error()})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Prayers reordered successfully"})
+}
+
 // resequencePrayerSubjects ensures display_sequence values are contiguous (0, 1, 2, ...)
 func resequencePrayerSubjects(userID int) error {
 	var subjects []models.PrayerSubject
@@ -681,6 +811,96 @@ func GetSubjectMembers(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Members retrieved successfully",
 		"members": members,
+	})
+}
+
+// GetSubjectParentGroups returns the family/group prayer subjects that an individual belongs to
+func GetSubjectParentGroups(c *gin.Context) {
+	currentUser := c.MustGet("currentUser").(models.UserProfile)
+	isAdmin := c.MustGet("admin").(bool)
+
+	subjectID, err := strconv.Atoi(c.Param("prayer_subject_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prayer subject ID", "details": err.Error()})
+		return
+	}
+
+	// Verify the prayer subject exists and user has permission
+	var existingSubject models.PrayerSubject
+	found, err := initializers.DB.From("prayer_subject").
+		Select("*").
+		Where(goqu.C("prayer_subject_id").Eq(subjectID)).
+		ScanStruct(&existingSubject)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch prayer subject", "details": err.Error()})
+		return
+	}
+
+	if !found {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Prayer subject not found"})
+		return
+	}
+
+	// Check permission - must be creator or admin
+	if existingSubject.Created_By != currentUser.User_Profile_ID && !isAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to view parent groups of this prayer subject"})
+		return
+	}
+
+	// Get all parent groups/families with their details
+	var parents []struct {
+		PrayerSubjectMembershipID int       `db:"prayer_subject_membership_id" json:"prayerSubjectMembershipId"`
+		GroupPrayerSubjectID      int       `db:"group_prayer_subject_id" json:"groupPrayerSubjectId"`
+		MembershipRole            *string   `db:"membership_role" json:"membershipRole"`
+		DatetimeCreate            time.Time `db:"datetime_create" json:"datetimeCreate"`
+		CreatedBy                 int       `db:"created_by" json:"createdBy"`
+		GroupDisplayName          string    `db:"group_display_name" json:"groupDisplayName"`
+		GroupType                 string    `db:"group_type" json:"groupType"`
+		GroupPhotoS3Key           *string   `db:"group_photo_s3_key" json:"groupPhotoS3Key"`
+	}
+
+	err = initializers.DB.From("prayer_subject_membership").
+		Select(
+			goqu.I("prayer_subject_membership.prayer_subject_membership_id"),
+			goqu.I("prayer_subject_membership.group_prayer_subject_id"),
+			goqu.I("prayer_subject_membership.membership_role"),
+			goqu.I("prayer_subject_membership.datetime_create"),
+			goqu.I("prayer_subject_membership.created_by"),
+			goqu.I("prayer_subject.prayer_subject_display_name").As("group_display_name"),
+			goqu.I("prayer_subject.prayer_subject_type").As("group_type"),
+			goqu.I("prayer_subject.photo_s3_key").As("group_photo_s3_key"),
+		).
+		Join(
+			goqu.T("prayer_subject"),
+			goqu.On(goqu.Ex{"prayer_subject_membership.group_prayer_subject_id": goqu.I("prayer_subject.prayer_subject_id")}),
+		).
+		Where(goqu.C("member_prayer_subject_id").Eq(subjectID)).
+		Order(goqu.I("prayer_subject_membership.datetime_create").Asc()).
+		ScanStructs(&parents)
+
+	if err != nil {
+		log.Println("Failed to fetch parent groups:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch parent groups", "details": err.Error()})
+		return
+	}
+
+	if parents == nil {
+		parents = []struct {
+			PrayerSubjectMembershipID int       `db:"prayer_subject_membership_id" json:"prayerSubjectMembershipId"`
+			GroupPrayerSubjectID      int       `db:"group_prayer_subject_id" json:"groupPrayerSubjectId"`
+			MembershipRole            *string   `db:"membership_role" json:"membershipRole"`
+			DatetimeCreate            time.Time `db:"datetime_create" json:"datetimeCreate"`
+			CreatedBy                 int       `db:"created_by" json:"createdBy"`
+			GroupDisplayName          string    `db:"group_display_name" json:"groupDisplayName"`
+			GroupType                 string    `db:"group_type" json:"groupType"`
+			GroupPhotoS3Key           *string   `db:"group_photo_s3_key" json:"groupPhotoS3Key"`
+		}{}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Parent groups retrieved successfully",
+		"parents": parents,
 	})
 }
 
