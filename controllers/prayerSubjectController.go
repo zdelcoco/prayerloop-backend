@@ -65,6 +65,7 @@ func GetUserPrayerSubjects(c *gin.Context) {
 				goqu.I("prayer.prayer_id"),
 				goqu.I("prayer_access.prayer_access_id"),
 				goqu.I("prayer_access.display_sequence"),
+				goqu.I("prayer.subject_display_sequence"),
 				goqu.I("prayer.prayer_type"),
 				goqu.I("prayer.is_private"),
 				goqu.I("prayer.title"),
@@ -103,7 +104,7 @@ func GetUserPrayerSubjects(c *gin.Context) {
 					goqu.Ex{"prayer.deleted": false},
 				),
 			).
-			Order(goqu.I("prayer_access.display_sequence").Asc()).
+			Order(goqu.I("prayer.subject_display_sequence").Asc()).
 			ScanStructsContext(c, &prayers)
 
 		if dbErr != nil {
@@ -537,33 +538,18 @@ func ReorderPrayerSubjects(c *gin.Context) {
 		return
 	}
 
-	// Get total count of prayer subjects for this user
-	var totalSubjects int
-	_, err = initializers.DB.From("prayer_subject").
-		Select(goqu.COUNT("prayer_subject_id")).
-		Where(goqu.C("created_by").Eq(userID)).
-		ScanVal(&totalSubjects)
-
-	if err != nil {
-		log.Println("Failed to count prayer subjects:", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count prayer subjects", "details": err.Error()})
+	// Validate request has subjects to reorder
+	if len(reorderData.Subjects) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No subjects provided for reordering"})
 		return
 	}
 
-	// Validate that all subjects are included
-	if len(reorderData.Subjects) != totalSubjects {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": fmt.Sprintf("Invalid reorder request: expected %d subjects, got %d. All subjects must be included.", totalSubjects, len(reorderData.Subjects)),
-		})
-		return
-	}
-
-	// Validate that all displaySequence values are unique and contiguous
+	// Validate that all displaySequence values are unique (within the provided subjects)
 	sequenceMap := make(map[int]bool)
 	for _, subject := range reorderData.Subjects {
-		if subject.DisplaySequence < 0 || subject.DisplaySequence >= totalSubjects {
+		if subject.DisplaySequence < 0 {
 			c.JSON(http.StatusBadRequest, gin.H{
-				"error": fmt.Sprintf("Invalid displaySequence %d: must be between 0 and %d", subject.DisplaySequence, totalSubjects-1),
+				"error": fmt.Sprintf("Invalid displaySequence %d: must be non-negative", subject.DisplaySequence),
 			})
 			return
 		}
@@ -646,11 +632,23 @@ func ReorderPrayerSubjectPrayers(c *gin.Context) {
 		return
 	}
 
-	// Get total count of prayers for this prayer subject
+	// Get total count of non-deleted prayers for this prayer subject that the user has access to
+	// This must match how GetUserPrayerSubjects fetches prayers (via prayer_access join)
 	var totalPrayers int
-	_, err = initializers.DB.From("prayer").
-		Select(goqu.COUNT("prayer_id")).
-		Where(goqu.C("prayer_subject_id").Eq(subjectID)).
+	_, err = initializers.DB.From("prayer_access").
+		Select(goqu.COUNT(goqu.DISTINCT("prayer.prayer_id"))).
+		Join(
+			goqu.T("prayer"),
+			goqu.On(goqu.Ex{"prayer_access.prayer_id": goqu.I("prayer.prayer_id")}),
+		).
+		Where(
+			goqu.And(
+				goqu.Ex{"prayer_access.access_type": "user"},
+				goqu.Ex{"prayer_access.access_type_id": currentUser.User_Profile_ID},
+				goqu.Ex{"prayer.prayer_subject_id": subjectID},
+				goqu.Ex{"prayer.deleted": false},
+			),
+		).
 		ScanVal(&totalPrayers)
 	if err != nil {
 		log.Println("Failed to count prayers:", err)
@@ -658,8 +656,11 @@ func ReorderPrayerSubjectPrayers(c *gin.Context) {
 		return
 	}
 
+	log.Printf("ReorderPrayerSubjectPrayers: subjectID=%d, totalPrayers=%d, requestPrayers=%d", subjectID, totalPrayers, len(reorderData.Prayers))
+
 	// Validate that all prayers are included in the request
 	if len(reorderData.Prayers) != totalPrayers {
+		log.Printf("ReorderPrayerSubjectPrayers: mismatch - DB has %d prayers, request has %d", totalPrayers, len(reorderData.Prayers))
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": fmt.Sprintf("Invalid reorder request: expected %d prayers, got %d. All prayers for this subject must be included.", totalPrayers, len(reorderData.Prayers)),
 		})
@@ -684,13 +685,13 @@ func ReorderPrayerSubjectPrayers(c *gin.Context) {
 		sequenceMap[prayer.DisplaySequence] = true
 	}
 
-	// Update each prayer's display_sequence
+	// Update each prayer's subject_display_sequence
 	for _, prayer := range reorderData.Prayers {
 		updateQuery := initializers.DB.Update("prayer").
 			Set(goqu.Record{
-				"display_sequence": prayer.DisplaySequence,
-				"updated_by":       currentUser.User_Profile_ID,
-				"datetime_update":  time.Now(),
+				"subject_display_sequence": prayer.DisplaySequence,
+				"updated_by":               currentUser.User_Profile_ID,
+				"datetime_update":          time.Now(),
 			}).
 			Where(
 				goqu.C("prayer_id").Eq(prayer.PrayerID),

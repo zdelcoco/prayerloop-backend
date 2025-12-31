@@ -725,19 +725,36 @@ func CreateGroupPrayer(c *gin.Context) {
 		}
 	}
 
+	// Shift all existing prayers in this subject down by incrementing their subject_display_sequence
+	// This makes room for the new prayer at position 0 (top of subject list)
+	updateSubjectSeqQuery := initializers.DB.Update("prayer").
+		Set(goqu.Record{"subject_display_sequence": goqu.L("subject_display_sequence + 1")}).
+		Where(
+			goqu.C("prayer_subject_id").Eq(prayerSubjectID),
+			goqu.C("deleted").Eq(false),
+		)
+
+	_, err = updateSubjectSeqQuery.Executor().Exec()
+	if err != nil {
+		log.Println("Failed to update prayer subject display sequence:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reorder prayers in subject", "details": err.Error()})
+		return
+	}
+
 	newPrayerEntry := models.Prayer{
-		Prayer_Type:        newPrayer.Prayer_Type,
-		Is_Private:         newPrayer.Is_Private,
-		Title:              newPrayer.Title,
-		Prayer_Description: newPrayer.Prayer_Description,
-		Is_Answered:        newPrayer.Is_Answered,
-		Datetime_Answered:  newPrayer.Datetime_Answered,
-		Prayer_Priority:    newPrayer.Prayer_Priority,
-		Prayer_Subject_ID:  &prayerSubjectID,
-		Created_By:         currentUser.User_Profile_ID,
-		Updated_By:         currentUser.User_Profile_ID,
-		Datetime_Create:    time.Now(),
-		Datetime_Update:    time.Now(),
+		Prayer_Type:              newPrayer.Prayer_Type,
+		Is_Private:               newPrayer.Is_Private,
+		Title:                    newPrayer.Title,
+		Prayer_Description:       newPrayer.Prayer_Description,
+		Is_Answered:              newPrayer.Is_Answered,
+		Datetime_Answered:        newPrayer.Datetime_Answered,
+		Prayer_Priority:          newPrayer.Prayer_Priority,
+		Prayer_Subject_ID:        &prayerSubjectID,
+		Subject_Display_Sequence: 0, // New prayers appear at the top of their subject
+		Created_By:               currentUser.User_Profile_ID,
+		Updated_By:               currentUser.User_Profile_ID,
+		Datetime_Create:          time.Now(),
+		Datetime_Update:          time.Now(),
 	}
 
 	prayerInsert := initializers.DB.Insert("prayer").Rows(newPrayerEntry).Returning("prayer_id")

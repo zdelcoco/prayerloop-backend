@@ -1544,6 +1544,10 @@ func TestCreateUserPrayer(t *testing.T) {
 				mock.ExpectQuery("SELECT \"prayer_subject_id\" FROM \"prayer_subject\"").
 					WillReturnRows(sqlmock.NewRows([]string{"prayer_subject_id"}).AddRow(1))
 
+				// Mock subject_display_sequence update for prayers in this subject
+				mock.ExpectExec("UPDATE \"prayer\" SET \"subject_display_sequence\"").
+					WillReturnResult(sqlmock.NewResult(0, 0))
+
 				// Mock prayer insert - return prayer ID
 				mock.ExpectQuery("INSERT INTO \"prayer\"").
 					WillReturnRows(sqlmock.NewRows([]string{"prayer_id"}).AddRow(1))
