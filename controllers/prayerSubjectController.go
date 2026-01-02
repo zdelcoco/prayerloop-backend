@@ -180,9 +180,10 @@ func CreatePrayerSubject(c *gin.Context) {
 	}
 
 	// Get next display_sequence for the user
+	// Use COALESCE to handle NULL when no prayer_subjects exist (returns -1, so next is 0)
 	var maxSequence int
-	found, err := initializers.DB.From("prayer_subject").
-		Select(goqu.MAX("display_sequence")).
+	_, err = initializers.DB.From("prayer_subject").
+		Select(goqu.L("COALESCE(MAX(display_sequence), -1)")).
 		Where(goqu.C("created_by").Eq(userID)).
 		ScanVal(&maxSequence)
 
@@ -192,10 +193,7 @@ func CreatePrayerSubject(c *gin.Context) {
 		return
 	}
 
-	nextSequence := 0
-	if found {
-		nextSequence = maxSequence + 1
-	}
+	nextSequence := maxSequence + 1
 
 	// Default useLinkedUserPhoto to false if not provided
 	useLinkedUserPhoto := false

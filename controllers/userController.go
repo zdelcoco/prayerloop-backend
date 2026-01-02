@@ -104,27 +104,42 @@ func PublicUserSignup(c *gin.Context) {
 		Updated_By:   1,
 	}
 
-	insert := initializers.DB.Insert("user_profile").Rows(newUser).Executor()
-	if _, err := insert.Exec(); err != nil {
+	insert := initializers.DB.Insert("user_profile").Rows(newUser).Returning("user_profile_id")
+	var insertedUserID int
+	_, err = insert.Executor().ScanVal(&insertedUserID)
+	if err != nil {
 		log.Default().Println(insert)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	} else {
-		// Send welcome email to new user
-		emailService := services.GetEmailService()
-		if emailService != nil {
-			err := emailService.SendWelcomeEmail(user.Email, user.First_Name)
-			if err != nil {
-				log.Printf("Failed to send welcome email to %s: %v", user.Email, err)
-				// Don't fail the signup if email fails - just log it
-			}
-		}
-
-		c.JSON(200, gin.H{
-			"message": "User created successfully.",
-			"user":    user,
-		})
 	}
+
+	// Create self prayer_subject for the new user
+	createdUser := models.UserProfile{
+		User_Profile_ID: insertedUserID,
+		First_Name:      user.First_Name,
+		Last_Name:       user.Last_Name,
+		Username:        user.Username,
+	}
+	_, err = GetOrCreateSelfPrayerSubject(createdUser)
+	if err != nil {
+		log.Printf("Failed to create self prayer_subject for user %d: %v", insertedUserID, err)
+		// Don't fail the signup if prayer_subject creation fails - just log it
+	}
+
+	// Send welcome email to new user
+	emailService := services.GetEmailService()
+	if emailService != nil {
+		err := emailService.SendWelcomeEmail(user.Email, user.First_Name)
+		if err != nil {
+			log.Printf("Failed to send welcome email to %s: %v", user.Email, err)
+			// Don't fail the signup if email fails - just log it
+		}
+	}
+
+	c.JSON(200, gin.H{
+		"message": "User created successfully.",
+		"user":    user,
+	})
 }
 
 func UserSignup(c *gin.Context) {
@@ -190,27 +205,42 @@ func UserSignup(c *gin.Context) {
 		Updated_By:   1,
 	}
 
-	insert := initializers.DB.Insert("user_profile").Rows(newUser).Executor()
-	if _, err := insert.Exec(); err != nil {
+	insert := initializers.DB.Insert("user_profile").Rows(newUser).Returning("user_profile_id")
+	var insertedUserID int
+	_, err = insert.Executor().ScanVal(&insertedUserID)
+	if err != nil {
 		log.Default().Println(insert)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	} else {
-		// Send welcome email to new user
-		emailService := services.GetEmailService()
-		if emailService != nil {
-			err := emailService.SendWelcomeEmail(user.Email, user.First_Name)
-			if err != nil {
-				log.Printf("Failed to send welcome email to %s: %v", user.Email, err)
-				// Don't fail the signup if email fails - just log it
-			}
-		}
-
-		c.JSON(200, gin.H{
-			"message": "User created successfully.",
-			"user":    user,
-		})
 	}
+
+	// Create self prayer_subject for the new user
+	createdUser := models.UserProfile{
+		User_Profile_ID: insertedUserID,
+		First_Name:      user.First_Name,
+		Last_Name:       user.Last_Name,
+		Username:        user.Username,
+	}
+	_, err = GetOrCreateSelfPrayerSubject(createdUser)
+	if err != nil {
+		log.Printf("Failed to create self prayer_subject for user %d: %v", insertedUserID, err)
+		// Don't fail the signup if prayer_subject creation fails - just log it
+	}
+
+	// Send welcome email to new user
+	emailService := services.GetEmailService()
+	if emailService != nil {
+		err := emailService.SendWelcomeEmail(user.Email, user.First_Name)
+		if err != nil {
+			log.Printf("Failed to send welcome email to %s: %v", user.Email, err)
+			// Don't fail the signup if email fails - just log it
+		}
+	}
+
+	c.JSON(200, gin.H{
+		"message": "User created successfully.",
+		"user":    user,
+	})
 }
 
 func CheckUsernameAvailability(c *gin.Context) {
