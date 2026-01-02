@@ -509,6 +509,7 @@ func UpdatePrayer(c *gin.Context) {
 			"is_answered":        updatedPrayer.Is_Answered,
 			"datetime_answered":  updatedPrayer.Datetime_Answered,
 			"prayer_priority":    updatedPrayer.Prayer_Priority,
+			"prayer_subject_id":  updatedPrayer.Prayer_Subject_ID,
 			"updated_by":         userID,
 			"datetime_update":    goqu.L("NOW()"),
 		}).
