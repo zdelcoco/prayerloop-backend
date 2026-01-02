@@ -104,7 +104,12 @@ func GetUserPrayerSubjects(c *gin.Context) {
 					goqu.Ex{"prayer.deleted": false},
 				),
 			).
-			Order(goqu.I("prayer.subject_display_sequence").Asc()).
+			Order(
+				// Sort by is_answered: false/NULL first (active), true last (answered)
+				// Use COALESCE to treat NULL as false for consistent sorting
+				goqu.L("COALESCE(prayer.is_answered, false)").Asc(),
+				goqu.I("prayer.subject_display_sequence").Asc(),
+			).
 			ScanStructsContext(c, &prayers)
 
 		if dbErr != nil {
@@ -114,6 +119,86 @@ func GetUserPrayerSubjects(c *gin.Context) {
 
 		if prayers == nil {
 			prayers = []models.UserPrayer{}
+		}
+
+		// Check if sequences need resequencing (detect gaps or duplicates)
+		// Only resequence if we have prayers and detect issues
+		if len(prayers) > 0 {
+			needsResequence := false
+			seenSequences := make(map[int]bool)
+			for i, prayer := range prayers {
+				// Check for duplicates or non-contiguous sequences
+				if seenSequences[prayer.Subject_Display_Sequence] || prayer.Subject_Display_Sequence != i {
+					needsResequence = true
+					break
+				}
+				seenSequences[prayer.Subject_Display_Sequence] = true
+			}
+
+			if needsResequence {
+				log.Printf("Detected non-contiguous sequences for subject %d, resequencing...", subject.Prayer_Subject_ID)
+				if err := resequencePrayersInSubject(userID, subject.Prayer_Subject_ID); err != nil {
+					log.Printf("Warning: Failed to resequence prayers for subject %d: %v", subject.Prayer_Subject_ID, err)
+				} else {
+					// Re-fetch prayers after resequencing to get correct order
+					// IMPORTANT: Reset slice first to avoid appending duplicates
+					prayers = []models.UserPrayer{}
+					dbErr = initializers.DB.From("prayer_access").
+						Select(
+							goqu.I("prayer_access.access_type_id").As("user_profile_id"),
+							goqu.I("prayer.prayer_id"),
+							goqu.I("prayer_access.prayer_access_id"),
+							goqu.I("prayer_access.display_sequence"),
+							goqu.I("prayer.subject_display_sequence"),
+							goqu.I("prayer.prayer_type"),
+							goqu.I("prayer.is_private"),
+							goqu.I("prayer.title"),
+							goqu.I("prayer.prayer_description"),
+							goqu.I("prayer.is_answered"),
+							goqu.I("prayer.prayer_priority"),
+							goqu.I("prayer.prayer_subject_id"),
+							goqu.I("prayer.datetime_answered"),
+							goqu.I("prayer.created_by"),
+							goqu.I("prayer.datetime_create"),
+							goqu.I("prayer.updated_by"),
+							goqu.I("prayer.datetime_update"),
+							goqu.I("prayer.deleted"),
+							goqu.I("prayer_category.prayer_category_id"),
+							goqu.I("prayer_category.category_name"),
+							goqu.I("prayer_category.category_color"),
+							goqu.I("prayer_category.display_sequence").As("category_display_seq"),
+						).
+						Join(
+							goqu.T("prayer"),
+							goqu.On(goqu.Ex{"prayer_access.prayer_id": goqu.I("prayer.prayer_id")}),
+						).
+						LeftJoin(
+							goqu.T("prayer_category_item"),
+							goqu.On(goqu.Ex{"prayer_access.prayer_access_id": goqu.I("prayer_category_item.prayer_access_id")}),
+						).
+						LeftJoin(
+							goqu.T("prayer_category"),
+							goqu.On(goqu.Ex{"prayer_category_item.prayer_category_id": goqu.I("prayer_category.prayer_category_id")}),
+						).
+						Where(
+							goqu.And(
+								goqu.Ex{"prayer_access.access_type": "user"},
+								goqu.Ex{"prayer_access.access_type_id": userID},
+								goqu.Ex{"prayer.prayer_subject_id": subject.Prayer_Subject_ID},
+								goqu.Ex{"prayer.deleted": false},
+							),
+						).
+						Order(
+							goqu.L("COALESCE(prayer.is_answered, false)").Asc(),
+							goqu.I("prayer.subject_display_sequence").Asc(),
+						).
+						ScanStructsContext(c, &prayers)
+
+					if dbErr != nil {
+						log.Printf("Failed to re-fetch prayers for subject %d after resequencing: %v", subject.Prayer_Subject_ID, dbErr)
+					}
+				}
+			}
 		}
 
 		subjectWithPrayers := models.PrayerSubjectWithPrayers{
@@ -633,7 +718,7 @@ func ReorderPrayerSubjectPrayers(c *gin.Context) {
 	// Get total count of non-deleted prayers for this prayer subject that the user has access to
 	// This must match how GetUserPrayerSubjects fetches prayers (via prayer_access join)
 	var totalPrayers int
-	_, err = initializers.DB.From("prayer_access").
+	countQuery := initializers.DB.From("prayer_access").
 		Select(goqu.COUNT(goqu.DISTINCT("prayer.prayer_id"))).
 		Join(
 			goqu.T("prayer"),
@@ -646,21 +731,75 @@ func ReorderPrayerSubjectPrayers(c *gin.Context) {
 				goqu.Ex{"prayer.prayer_subject_id": subjectID},
 				goqu.Ex{"prayer.deleted": false},
 			),
-		).
-		ScanVal(&totalPrayers)
+		)
+
+	_, err = countQuery.ScanVal(&totalPrayers)
 	if err != nil {
-		log.Println("Failed to count prayers:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count prayers", "details": err.Error()})
 		return
 	}
 
-	log.Printf("ReorderPrayerSubjectPrayers: subjectID=%d, totalPrayers=%d, requestPrayers=%d", subjectID, totalPrayers, len(reorderData.Prayers))
+	// Also get the actual prayer IDs from the database for comparison
+	var dbPrayerIDs []int
+	err = initializers.DB.From("prayer_access").
+		Select(goqu.DISTINCT("prayer.prayer_id")).
+		Join(
+			goqu.T("prayer"),
+			goqu.On(goqu.Ex{"prayer_access.prayer_id": goqu.I("prayer.prayer_id")}),
+		).
+		Where(
+			goqu.And(
+				goqu.Ex{"prayer_access.access_type": "user"},
+				goqu.Ex{"prayer_access.access_type_id": currentUser.User_Profile_ID},
+				goqu.Ex{"prayer.prayer_subject_id": subjectID},
+				goqu.Ex{"prayer.deleted": false},
+			),
+		).
+		ScanVals(&dbPrayerIDs)
+	if err != nil {
+		dbPrayerIDs = []int{}
+	}
 
 	// Validate that all prayers are included in the request
 	if len(reorderData.Prayers) != totalPrayers {
-		log.Printf("ReorderPrayerSubjectPrayers: mismatch - DB has %d prayers, request has %d", totalPrayers, len(reorderData.Prayers))
+		// Build request prayer IDs for error response
+		requestPrayerIDs := make([]int, len(reorderData.Prayers))
+		for i, p := range reorderData.Prayers {
+			requestPrayerIDs[i] = p.PrayerID
+		}
+
+		// Find which prayer IDs are in request but not in DB
+		dbPrayerIDMap := make(map[int]bool)
+		for _, id := range dbPrayerIDs {
+			dbPrayerIDMap[id] = true
+		}
+		var extraInRequest []int
+		for _, id := range requestPrayerIDs {
+			if !dbPrayerIDMap[id] {
+				extraInRequest = append(extraInRequest, id)
+			}
+		}
+
+		// Find which prayer IDs are in DB but not in request
+		requestPrayerIDMap := make(map[int]bool)
+		for _, id := range requestPrayerIDs {
+			requestPrayerIDMap[id] = true
+		}
+		var missingFromRequest []int
+		for _, id := range dbPrayerIDs {
+			if !requestPrayerIDMap[id] {
+				missingFromRequest = append(missingFromRequest, id)
+			}
+		}
+
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": fmt.Sprintf("Invalid reorder request: expected %d prayers, got %d. All prayers for this subject must be included.", totalPrayers, len(reorderData.Prayers)),
+			"error":              fmt.Sprintf("Invalid reorder request: expected %d prayers, got %d. All prayers for this subject must be included.", totalPrayers, len(reorderData.Prayers)),
+			"dbPrayerCount":      totalPrayers,
+			"requestPrayerCount": len(reorderData.Prayers),
+			"dbPrayerIDs":        dbPrayerIDs,
+			"requestPrayerIDs":   requestPrayerIDs,
+			"extraInRequest":     extraInRequest,
+			"missingFromRequest": missingFromRequest,
 		})
 		return
 	}
@@ -698,13 +837,64 @@ func ReorderPrayerSubjectPrayers(c *gin.Context) {
 
 		_, err := updateQuery.Executor().Exec()
 		if err != nil {
-			log.Println("Failed to update prayer display sequence:", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reorder prayers", "details": err.Error()})
 			return
 		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Prayers reordered successfully"})
+}
+
+// resequencePrayersInSubject ensures subject_display_sequence values are contiguous (0, 1, 2, ...)
+// for all prayers in a prayer subject that a user has access to.
+// This cleans up any gaps from deleted prayers or duplicate sequences from legacy data.
+func resequencePrayersInSubject(userID int, subjectID int) error {
+	// Get all prayers for this subject that the user has access to, ordered by current sequence
+	type PrayerSeq struct {
+		Prayer_ID                int `db:"prayer_id"`
+		Subject_Display_Sequence int `db:"subject_display_sequence"`
+	}
+	var prayers []PrayerSeq
+
+	err := initializers.DB.From("prayer_access").
+		Select(
+			goqu.I("prayer.prayer_id"),
+			goqu.I("prayer.subject_display_sequence"),
+		).
+		Join(
+			goqu.T("prayer"),
+			goqu.On(goqu.Ex{"prayer_access.prayer_id": goqu.I("prayer.prayer_id")}),
+		).
+		Where(
+			goqu.And(
+				goqu.Ex{"prayer_access.access_type": "user"},
+				goqu.Ex{"prayer_access.access_type_id": userID},
+				goqu.Ex{"prayer.prayer_subject_id": subjectID},
+				goqu.Ex{"prayer.deleted": false},
+			),
+		).
+		Order(goqu.I("prayer.subject_display_sequence").Asc()).
+		ScanStructs(&prayers)
+
+	if err != nil {
+		return err
+	}
+
+	// Update any prayers that don't have the correct sequence
+	for i, prayer := range prayers {
+		if prayer.Subject_Display_Sequence != i {
+			log.Printf("Resequencing prayer %d: %d -> %d", prayer.Prayer_ID, prayer.Subject_Display_Sequence, i)
+			_, err := initializers.DB.Update("prayer").
+				Set(goqu.Record{"subject_display_sequence": i}).
+				Where(goqu.C("prayer_id").Eq(prayer.Prayer_ID)).
+				Executor().Exec()
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // resequencePrayerSubjects ensures display_sequence values are contiguous (0, 1, 2, ...)
