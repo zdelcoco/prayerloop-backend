@@ -64,6 +64,11 @@ func main() {
 		auth.POST("/users/:user_profile_id/prayers", controllers.CreateUserPrayer)
 		auth.PATCH("/users/:user_profile_id/prayers/reorder", controllers.ReorderUserPrayers)
 
+		// prayer subject routes
+		auth.GET("/users/:user_profile_id/prayer-subjects", controllers.GetUserPrayerSubjects)
+		auth.POST("/users/:user_profile_id/prayer-subjects", controllers.CreatePrayerSubject)
+		auth.PATCH("/users/:user_profile_id/prayer-subjects/reorder", controllers.ReorderPrayerSubjects)
+
 		auth.GET("/users/:user_profile_id/categories", controllers.GetUserCategories)
 		auth.POST("/users/:user_profile_id/categories", controllers.CreateUserCategory)
 		auth.PATCH("/users/:user_profile_id/categories/reorder", controllers.ReorderUserCategories)
@@ -106,6 +111,30 @@ func main() {
 		auth.DELETE("/prayers/:prayer_id", controllers.DeletePrayer)
 		auth.POST("/prayers/:prayer_id/access", controllers.AddPrayerAccess)
 		auth.DELETE("/prayers/:prayer_id/access/:prayer_access_id", controllers.RemovePrayerAccess)
+
+		// prayer subject routes (resource-level operations)
+		auth.PATCH("/prayer-subjects/:prayer_subject_id", controllers.UpdatePrayerSubject)
+		auth.DELETE("/prayer-subjects/:prayer_subject_id", controllers.DeletePrayerSubject)
+
+		// prayer subject membership routes
+		auth.GET("/prayer-subjects/:prayer_subject_id/members", controllers.GetSubjectMembers)
+		auth.GET("/prayer-subjects/:prayer_subject_id/parents", controllers.GetSubjectParentGroups)
+		auth.POST("/prayer-subjects/:prayer_subject_id/members", controllers.AddMemberToSubject)
+		auth.DELETE("/prayer-subjects/:prayer_subject_id/members/:member_prayer_subject_id", controllers.RemoveMemberFromSubject)
+
+		// prayer subject prayers routes
+		auth.PATCH("/prayer-subjects/:prayer_subject_id/prayers/reorder", controllers.ReorderPrayerSubjectPrayers)
+
+		// prayer subject link routes
+		auth.DELETE("/prayer-subjects/:prayer_subject_id/link", controllers.RemovePrayerSubjectLink)
+
+		// connection request routes
+		auth.GET("/users/search", controllers.SearchUserByEmail)
+		auth.POST("/connection-requests", controllers.SendConnectionRequest)
+		auth.GET("/users/:user_profile_id/connection-requests/incoming", controllers.GetIncomingConnectionRequests)
+		auth.GET("/users/:user_profile_id/connection-requests/outgoing", controllers.GetOutgoingConnectionRequests)
+		auth.GET("/users/:user_profile_id/connection-requests/count", controllers.GetPendingConnectionRequestCount)
+		auth.PATCH("/connection-requests/:request_id", controllers.RespondToConnectionRequest)
 
 		// category routes
 		auth.PUT("/categories/:prayer_category_id", controllers.UpdateCategory)

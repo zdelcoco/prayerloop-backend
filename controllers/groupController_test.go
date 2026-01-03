@@ -253,13 +253,15 @@ func TestGetAllGroups(t *testing.T) {
 	}
 }
 
-// Test UpdateGroup - Admin-only update group
+// Test UpdateGroup - Update group (admin or creator)
 func TestUpdateGroup(t *testing.T) {
 	tests := []struct {
 		name           string
 		groupID        string
 		currentUser    models.UserProfile
 		isAdmin        bool
+		isCreator      bool
+		groupExists    bool
 		updateData     models.GroupUpdate
 		rowsAffected   int64
 		expectedStatus int
@@ -270,6 +272,8 @@ func TestUpdateGroup(t *testing.T) {
 			groupID:     "1",
 			currentUser: MockAdminUser(),
 			isAdmin:     true,
+			isCreator:   false,
+			groupExists: true,
 			updateData: models.GroupUpdate{
 				Group_Name:        "Updated Group",
 				Group_Description: "Updated description",
@@ -280,10 +284,28 @@ func TestUpdateGroup(t *testing.T) {
 			expectError:    false,
 		},
 		{
-			name:        "unauthorized - non-admin",
+			name:        "successful update - creator (non-admin)",
 			groupID:     "1",
 			currentUser: MockUser(),
 			isAdmin:     false,
+			isCreator:   true,
+			groupExists: true,
+			updateData: models.GroupUpdate{
+				Group_Name:        "Updated Group",
+				Group_Description: "Updated description",
+				Is_Active:         true,
+			},
+			rowsAffected:   1,
+			expectedStatus: http.StatusOK,
+			expectError:    false,
+		},
+		{
+			name:        "unauthorized - not creator and not admin",
+			groupID:     "1",
+			currentUser: MockUser(),
+			isAdmin:     false,
+			isCreator:   false,
+			groupExists: true,
 			updateData: models.GroupUpdate{
 				Group_Name:        "Updated Group",
 				Group_Description: "Updated description",
@@ -297,6 +319,8 @@ func TestUpdateGroup(t *testing.T) {
 			groupID:     "999",
 			currentUser: MockAdminUser(),
 			isAdmin:     true,
+			isCreator:   false,
+			groupExists: false,
 			updateData: models.GroupUpdate{
 				Group_Name:        "Updated Group",
 				Group_Description: "Updated description",
@@ -311,6 +335,8 @@ func TestUpdateGroup(t *testing.T) {
 			groupID:        "invalid",
 			currentUser:    MockAdminUser(),
 			isAdmin:        true,
+			isCreator:      false,
+			groupExists:    false,
 			updateData:     models.GroupUpdate{},
 			expectedStatus: http.StatusBadRequest,
 			expectError:    true,
@@ -322,9 +348,25 @@ func TestUpdateGroup(t *testing.T) {
 			_, mock, cleanup := SetupTestDB(t)
 			defer cleanup()
 
-			if tt.isAdmin && tt.groupID != "invalid" {
-				mock.ExpectExec("UPDATE \"group_profile\"").
-					WillReturnResult(sqlmock.NewResult(0, tt.rowsAffected))
+			if tt.groupID != "invalid" {
+				if tt.groupExists {
+					createdBy := 2 // Default to different user
+					if tt.isCreator {
+						createdBy = tt.currentUser.User_Profile_ID
+					}
+					// Mock group lookup to get created_by
+					rows := sqlmock.NewRows([]string{"created_by"}).
+						AddRow(createdBy)
+					mock.ExpectQuery("SELECT").WillReturnRows(rows)
+
+					if tt.isAdmin || tt.isCreator {
+						mock.ExpectExec("UPDATE \"group_profile\"").
+							WillReturnResult(sqlmock.NewResult(0, tt.rowsAffected))
+					}
+				} else {
+					// Mock empty result (group not found)
+					mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"created_by"}))
+				}
 			}
 
 			c, w := SetupTestContext()
@@ -1052,6 +1094,14 @@ func TestCreateGroupPrayer(t *testing.T) {
 					}
 
 					if (tt.userInGroup || tt.isAdmin) && tt.prayerData != nil && len(tt.prayerData) > 0 {
+						// Mock prayer_subject lookup - return existing subject ID
+						mock.ExpectQuery("SELECT \"prayer_subject_id\" FROM \"prayer_subject\"").
+							WillReturnRows(sqlmock.NewRows([]string{"prayer_subject_id"}).AddRow(1))
+
+						// Mock subject_display_sequence update for prayers in this subject
+						mock.ExpectExec("UPDATE \"prayer\" SET \"subject_display_sequence\"").
+							WillReturnResult(sqlmock.NewResult(0, 0))
+
 						// Mock prayer insert
 						mock.ExpectQuery("INSERT INTO \"prayer\"").
 							WillReturnRows(sqlmock.NewRows([]string{"prayer_id"}).AddRow(1))
