@@ -171,14 +171,32 @@ func UpdateGroup(c *gin.Context) {
 	user := c.MustGet("currentUser").(models.UserProfile)
 	admin := c.MustGet("admin").(bool)
 
-	if !admin {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Only admins can update groups"})
-		return
-	}
-
 	groupID, err := strconv.Atoi(c.Param("group_profile_id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid group profile ID", "details": err.Error()})
+		return
+	}
+
+	// Check if user is the group creator
+	var group models.GroupProfile
+	found, err := initializers.DB.From("group_profile").
+		Select("created_by").
+		Where(goqu.C("group_profile_id").Eq(groupID)).
+		ScanStruct(&group)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch group", "details": err.Error()})
+		return
+	}
+
+	if !found {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Group not found"})
+		return
+	}
+
+	// Only allow if user is admin OR the group creator
+	if !admin && group.Created_By != user.User_Profile_ID {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Only the group creator or an admin can update this group"})
 		return
 	}
 
@@ -192,7 +210,6 @@ func UpdateGroup(c *gin.Context) {
 		Set(goqu.Record{
 			"group_name":        updateGroup.Group_Name,
 			"group_description": updateGroup.Group_Description,
-			"is_active":         updateGroup.Is_Active,
 			"updated_by":        user.User_Profile_ID,
 			"datetime_update":   time.Now(),
 		}).
@@ -616,6 +633,8 @@ func GetGroupPrayers(c *gin.Context) {
 			goqu.I("prayer.updated_by"),
 			goqu.I("prayer.datetime_update"),
 			goqu.I("prayer.deleted"),
+			goqu.I("prayer.prayer_subject_id"),
+			goqu.I("prayer_subject.prayer_subject_display_name"),
 			goqu.I("prayer_category.prayer_category_id"),
 			goqu.I("prayer_category.category_name"),
 			goqu.I("prayer_category.category_color"),
@@ -624,6 +643,10 @@ func GetGroupPrayers(c *gin.Context) {
 		Join(
 			goqu.T("prayer_access"),
 			goqu.On(goqu.Ex{"prayer.prayer_id": goqu.I("prayer_access.prayer_id")}),
+		).
+		LeftJoin(
+			goqu.T("prayer_subject"),
+			goqu.On(goqu.Ex{"prayer.prayer_subject_id": goqu.I("prayer_subject.prayer_subject_id")}),
 		).
 		LeftJoin(
 			goqu.T("prayer_category_item"),
@@ -690,18 +713,71 @@ func CreateGroupPrayer(c *gin.Context) {
 		return
 	}
 
+	// Determine prayer_subject_id - use provided value or fall back to self subject
+	var prayerSubjectID int
+	if newPrayer.Prayer_Subject_ID != nil {
+		// Verify the prayer subject exists and belongs to the current user
+		var subjectExists bool
+		subjectExists, err = initializers.DB.From("prayer_subject").
+			Select(goqu.L("1")).
+			Where(
+				goqu.C("prayer_subject_id").Eq(*newPrayer.Prayer_Subject_ID),
+				goqu.C("created_by").Eq(currentUser.User_Profile_ID),
+			).
+			ScanVal(new(int))
+
+		if err != nil {
+			log.Println("Failed to verify prayer_subject:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify prayer subject", "details": err.Error()})
+			return
+		}
+
+		if !subjectExists {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Prayer subject not found or does not belong to you"})
+			return
+		}
+
+		prayerSubjectID = *newPrayer.Prayer_Subject_ID
+	} else {
+		// Fall back to self subject for backwards compatibility
+		prayerSubjectID, err = GetOrCreateSelfPrayerSubject(currentUser)
+		if err != nil {
+			log.Println("Failed to get/create self prayer_subject:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create prayer subject", "details": err.Error()})
+			return
+		}
+	}
+
+	// Shift all existing prayers in this subject down by incrementing their subject_display_sequence
+	// This makes room for the new prayer at position 0 (top of subject list)
+	updateSubjectSeqQuery := initializers.DB.Update("prayer").
+		Set(goqu.Record{"subject_display_sequence": goqu.L("subject_display_sequence + 1")}).
+		Where(
+			goqu.C("prayer_subject_id").Eq(prayerSubjectID),
+			goqu.C("deleted").Eq(false),
+		)
+
+	_, err = updateSubjectSeqQuery.Executor().Exec()
+	if err != nil {
+		log.Println("Failed to update prayer subject display sequence:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reorder prayers in subject", "details": err.Error()})
+		return
+	}
+
 	newPrayerEntry := models.Prayer{
-		Prayer_Type:        newPrayer.Prayer_Type,
-		Is_Private:         newPrayer.Is_Private,
-		Title:              newPrayer.Title,
-		Prayer_Description: newPrayer.Prayer_Description,
-		Is_Answered:        newPrayer.Is_Answered,
-		Datetime_Answered:  newPrayer.Datetime_Answered,
-		Prayer_Priority:    newPrayer.Prayer_Priority,
-		Created_By:         currentUser.User_Profile_ID,
-		Updated_By:         currentUser.User_Profile_ID,
-		Datetime_Create:    time.Now(),
-		Datetime_Update:    time.Now(),
+		Prayer_Type:              newPrayer.Prayer_Type,
+		Is_Private:               newPrayer.Is_Private,
+		Title:                    newPrayer.Title,
+		Prayer_Description:       newPrayer.Prayer_Description,
+		Is_Answered:              newPrayer.Is_Answered,
+		Datetime_Answered:        newPrayer.Datetime_Answered,
+		Prayer_Priority:          newPrayer.Prayer_Priority,
+		Prayer_Subject_ID:        &prayerSubjectID,
+		Subject_Display_Sequence: 0, // New prayers appear at the top of their subject
+		Created_By:               currentUser.User_Profile_ID,
+		Updated_By:               currentUser.User_Profile_ID,
+		Datetime_Create:          time.Now(),
+		Datetime_Update:          time.Now(),
 	}
 
 	prayerInsert := initializers.DB.Insert("prayer").Rows(newPrayerEntry).Returning("prayer_id")

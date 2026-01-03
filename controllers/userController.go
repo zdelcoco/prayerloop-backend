@@ -104,27 +104,42 @@ func PublicUserSignup(c *gin.Context) {
 		Updated_By:   1,
 	}
 
-	insert := initializers.DB.Insert("user_profile").Rows(newUser).Executor()
-	if _, err := insert.Exec(); err != nil {
+	insert := initializers.DB.Insert("user_profile").Rows(newUser).Returning("user_profile_id")
+	var insertedUserID int
+	_, err = insert.Executor().ScanVal(&insertedUserID)
+	if err != nil {
 		log.Default().Println(insert)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	} else {
-		// Send welcome email to new user
-		emailService := services.GetEmailService()
-		if emailService != nil {
-			err := emailService.SendWelcomeEmail(user.Email, user.First_Name)
-			if err != nil {
-				log.Printf("Failed to send welcome email to %s: %v", user.Email, err)
-				// Don't fail the signup if email fails - just log it
-			}
-		}
-
-		c.JSON(200, gin.H{
-			"message": "User created successfully.",
-			"user":    user,
-		})
 	}
+
+	// Create self prayer_subject for the new user
+	createdUser := models.UserProfile{
+		User_Profile_ID: insertedUserID,
+		First_Name:      user.First_Name,
+		Last_Name:       user.Last_Name,
+		Username:        user.Username,
+	}
+	_, err = GetOrCreateSelfPrayerSubject(createdUser)
+	if err != nil {
+		log.Printf("Failed to create self prayer_subject for user %d: %v", insertedUserID, err)
+		// Don't fail the signup if prayer_subject creation fails - just log it
+	}
+
+	// Send welcome email to new user
+	emailService := services.GetEmailService()
+	if emailService != nil {
+		err := emailService.SendWelcomeEmail(user.Email, user.First_Name)
+		if err != nil {
+			log.Printf("Failed to send welcome email to %s: %v", user.Email, err)
+			// Don't fail the signup if email fails - just log it
+		}
+	}
+
+	c.JSON(200, gin.H{
+		"message": "User created successfully.",
+		"user":    user,
+	})
 }
 
 func UserSignup(c *gin.Context) {
@@ -190,27 +205,42 @@ func UserSignup(c *gin.Context) {
 		Updated_By:   1,
 	}
 
-	insert := initializers.DB.Insert("user_profile").Rows(newUser).Executor()
-	if _, err := insert.Exec(); err != nil {
+	insert := initializers.DB.Insert("user_profile").Rows(newUser).Returning("user_profile_id")
+	var insertedUserID int
+	_, err = insert.Executor().ScanVal(&insertedUserID)
+	if err != nil {
 		log.Default().Println(insert)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	} else {
-		// Send welcome email to new user
-		emailService := services.GetEmailService()
-		if emailService != nil {
-			err := emailService.SendWelcomeEmail(user.Email, user.First_Name)
-			if err != nil {
-				log.Printf("Failed to send welcome email to %s: %v", user.Email, err)
-				// Don't fail the signup if email fails - just log it
-			}
-		}
-
-		c.JSON(200, gin.H{
-			"message": "User created successfully.",
-			"user":    user,
-		})
 	}
+
+	// Create self prayer_subject for the new user
+	createdUser := models.UserProfile{
+		User_Profile_ID: insertedUserID,
+		First_Name:      user.First_Name,
+		Last_Name:       user.Last_Name,
+		Username:        user.Username,
+	}
+	_, err = GetOrCreateSelfPrayerSubject(createdUser)
+	if err != nil {
+		log.Printf("Failed to create self prayer_subject for user %d: %v", insertedUserID, err)
+		// Don't fail the signup if prayer_subject creation fails - just log it
+	}
+
+	// Send welcome email to new user
+	emailService := services.GetEmailService()
+	if emailService != nil {
+		err := emailService.SendWelcomeEmail(user.Email, user.First_Name)
+		if err != nil {
+			log.Printf("Failed to send welcome email to %s: %v", user.Email, err)
+			// Don't fail the signup if email fails - just log it
+		}
+	}
+
+	c.JSON(200, gin.H{
+		"message": "User created successfully.",
+		"user":    user,
+	})
 }
 
 func CheckUsernameAvailability(c *gin.Context) {
@@ -567,18 +597,71 @@ func CreateUserPrayer(c *gin.Context) {
 		return
 	}
 
+	// Determine prayer_subject_id - use provided value or fall back to self subject
+	var prayerSubjectID int
+	if newPrayer.Prayer_Subject_ID != nil {
+		// Verify the prayer subject exists and belongs to this user
+		var subjectExists bool
+		subjectExists, err = initializers.DB.From("prayer_subject").
+			Select(goqu.L("1")).
+			Where(
+				goqu.C("prayer_subject_id").Eq(*newPrayer.Prayer_Subject_ID),
+				goqu.C("created_by").Eq(userID),
+			).
+			ScanVal(new(int))
+
+		if err != nil {
+			log.Println("Failed to verify prayer_subject:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify prayer subject", "details": err.Error()})
+			return
+		}
+
+		if !subjectExists {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Prayer subject not found or does not belong to you"})
+			return
+		}
+
+		prayerSubjectID = *newPrayer.Prayer_Subject_ID
+	} else {
+		// Fall back to self subject for backwards compatibility
+		prayerSubjectID, err = GetOrCreateSelfPrayerSubject(currentUser)
+		if err != nil {
+			log.Println("Failed to get/create self prayer_subject:", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create prayer subject", "details": err.Error()})
+			return
+		}
+	}
+
+	// Shift all existing prayers in this subject down by incrementing their subject_display_sequence
+	// This makes room for the new prayer at position 0 (top of subject list)
+	updateSubjectSeqQuery := initializers.DB.Update("prayer").
+		Set(goqu.Record{"subject_display_sequence": goqu.L("subject_display_sequence + 1")}).
+		Where(
+			goqu.C("prayer_subject_id").Eq(prayerSubjectID),
+			goqu.C("deleted").Eq(false),
+		)
+
+	_, err = updateSubjectSeqQuery.Executor().Exec()
+	if err != nil {
+		log.Println("Failed to update prayer subject display sequence:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reorder prayers in subject", "details": err.Error()})
+		return
+	}
+
 	newPrayerEntry := models.Prayer{
-		Prayer_Type:        newPrayer.Prayer_Type,
-		Is_Private:         newPrayer.Is_Private,
-		Title:              newPrayer.Title,
-		Prayer_Description: newPrayer.Prayer_Description,
-		Is_Answered:        newPrayer.Is_Answered,
-		Datetime_Answered:  newPrayer.Datetime_Answered,
-		Prayer_Priority:    newPrayer.Prayer_Priority,
-		Created_By:         currentUser.User_Profile_ID,
-		Updated_By:         currentUser.User_Profile_ID,
-		Datetime_Create:    time.Now(),
-		Datetime_Update:    time.Now(),
+		Prayer_Type:              newPrayer.Prayer_Type,
+		Is_Private:               newPrayer.Is_Private,
+		Title:                    newPrayer.Title,
+		Prayer_Description:       newPrayer.Prayer_Description,
+		Is_Answered:              newPrayer.Is_Answered,
+		Datetime_Answered:        newPrayer.Datetime_Answered,
+		Prayer_Priority:          newPrayer.Prayer_Priority,
+		Prayer_Subject_ID:        &prayerSubjectID,
+		Subject_Display_Sequence: 0, // New prayers appear at the top of their subject
+		Created_By:               currentUser.User_Profile_ID,
+		Updated_By:               currentUser.User_Profile_ID,
+		Datetime_Create:          time.Now(),
+		Datetime_Update:          time.Now(),
 	}
 
 	prayerInsert := initializers.DB.Insert("prayer").Rows(newPrayerEntry).Returning("prayer_id")
@@ -1523,4 +1606,60 @@ func DeleteUserAccount(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Account deleted successfully",
 	})
+}
+
+// GetOrCreateSelfPrayerSubject finds or creates a "self" prayer_subject for a user.
+// A "self" prayer_subject is one where the user is praying for themselves.
+// This is identified by: created_by = user_profile_id AND user_profile_id = user_profile_id (linked to self)
+func GetOrCreateSelfPrayerSubject(user models.UserProfile) (int, error) {
+	// First, try to find an existing "self" prayer_subject
+	var existingSubjectID int
+	found, err := initializers.DB.From("prayer_subject").
+		Select("prayer_subject_id").
+		Where(
+			goqu.And(
+				goqu.C("created_by").Eq(user.User_Profile_ID),
+				goqu.C("user_profile_id").Eq(user.User_Profile_ID),
+			),
+		).
+		ScanVal(&existingSubjectID)
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to check for existing self prayer_subject: %v", err)
+	}
+
+	if found {
+		return existingSubjectID, nil
+	}
+
+	// No existing "self" prayer_subject, create one
+	displayName := strings.TrimSpace(user.First_Name + " " + user.Last_Name)
+	if displayName == "" {
+		displayName = user.Username
+	}
+	if displayName == "" {
+		displayName = "Me"
+	}
+
+	newSubject := models.PrayerSubject{
+		Prayer_Subject_Type:         "individual",
+		Prayer_Subject_Display_Name: displayName,
+		User_Profile_ID:             &user.User_Profile_ID,
+		Use_Linked_User_Photo:       true,
+		Link_Status:                 "linked",
+		Display_Sequence:            0,
+		Created_By:                  user.User_Profile_ID,
+		Updated_By:                  user.User_Profile_ID,
+	}
+
+	insert := initializers.DB.Insert("prayer_subject").Rows(newSubject).Returning("prayer_subject_id")
+
+	var insertedID int
+	_, err = insert.Executor().ScanVal(&insertedID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create self prayer_subject: %v", err)
+	}
+
+	log.Printf("Created self prayer_subject %d for user %d", insertedID, user.User_Profile_ID)
+	return insertedID, nil
 }

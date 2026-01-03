@@ -1320,9 +1320,17 @@ func TestPublicUserSignup(t *testing.T) {
 						WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(tt.mockEmail))
 
 					if tt.mockEmail == 0 {
-						// Mock insert
-						mock.ExpectExec("INSERT").
-							WillReturnResult(sqlmock.NewResult(1, 1))
+						// Mock insert with RETURNING user_profile_id
+						mock.ExpectQuery("INSERT").
+							WillReturnRows(sqlmock.NewRows([]string{"user_profile_id"}).AddRow(1))
+
+						// Mock the GetOrCreateSelfPrayerSubject query (check for existing)
+						mock.ExpectQuery("SELECT").
+							WillReturnRows(sqlmock.NewRows([]string{"prayer_subject_id"}))
+
+						// Mock the insert for creating self prayer_subject
+						mock.ExpectQuery("INSERT").
+							WillReturnRows(sqlmock.NewRows([]string{"prayer_subject_id"}).AddRow(1))
 					}
 				}
 			}
@@ -1435,9 +1443,17 @@ func TestUserSignup(t *testing.T) {
 						WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(tt.mockEmail))
 
 					if tt.mockEmail == 0 {
-						// Mock insert
-						mock.ExpectExec("INSERT").
-							WillReturnResult(sqlmock.NewResult(1, 1))
+						// Mock insert with RETURNING user_profile_id
+						mock.ExpectQuery("INSERT").
+							WillReturnRows(sqlmock.NewRows([]string{"user_profile_id"}).AddRow(1))
+
+						// Mock the GetOrCreateSelfPrayerSubject query (check for existing)
+						mock.ExpectQuery("SELECT").
+							WillReturnRows(sqlmock.NewRows([]string{"prayer_subject_id"}))
+
+						// Mock the insert for creating self prayer_subject
+						mock.ExpectQuery("INSERT").
+							WillReturnRows(sqlmock.NewRows([]string{"prayer_subject_id"}).AddRow(1))
 					}
 				}
 			}
@@ -1540,6 +1556,14 @@ func TestCreateUserPrayer(t *testing.T) {
 			defer cleanup()
 
 			if tt.userID != "invalid" && !tt.expectError {
+				// Mock prayer_subject lookup - return existing subject ID
+				mock.ExpectQuery("SELECT \"prayer_subject_id\" FROM \"prayer_subject\"").
+					WillReturnRows(sqlmock.NewRows([]string{"prayer_subject_id"}).AddRow(1))
+
+				// Mock subject_display_sequence update for prayers in this subject
+				mock.ExpectExec("UPDATE \"prayer\" SET \"subject_display_sequence\"").
+					WillReturnResult(sqlmock.NewResult(0, 0))
+
 				// Mock prayer insert - return prayer ID
 				mock.ExpectQuery("INSERT INTO \"prayer\"").
 					WillReturnRows(sqlmock.NewRows([]string{"prayer_id"}).AddRow(1))

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"reflect"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -500,6 +501,14 @@ func UpdatePrayer(c *gin.Context) {
 		}
 	}
 
+	// Auto-set datetime_answered when marking as answered for the first time
+	if updatedPrayer.Is_Answered != nil && *updatedPrayer.Is_Answered &&
+		(existingPrayer.Is_Answered == nil || !*existingPrayer.Is_Answered) &&
+		updatedPrayer.Datetime_Answered == nil {
+		now := time.Now()
+		updatedPrayer.Datetime_Answered = &now
+	}
+
 	updateQuery := initializers.DB.Update("prayer").
 		Set(goqu.Record{
 			"prayer_type":        updatedPrayer.Prayer_Type,
@@ -509,6 +518,7 @@ func UpdatePrayer(c *gin.Context) {
 			"is_answered":        updatedPrayer.Is_Answered,
 			"datetime_answered":  updatedPrayer.Datetime_Answered,
 			"prayer_priority":    updatedPrayer.Prayer_Priority,
+			"prayer_subject_id":  updatedPrayer.Prayer_Subject_ID,
 			"updated_by":         userID,
 			"datetime_update":    goqu.L("NOW()"),
 		}).
