@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"reflect"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -498,6 +499,14 @@ func UpdatePrayer(c *gin.Context) {
 				field.Set(existingField)
 			}
 		}
+	}
+
+	// Auto-set datetime_answered when marking as answered for the first time
+	if updatedPrayer.Is_Answered != nil && *updatedPrayer.Is_Answered &&
+		(existingPrayer.Is_Answered == nil || !*existingPrayer.Is_Answered) &&
+		updatedPrayer.Datetime_Answered == nil {
+		now := time.Now()
+		updatedPrayer.Datetime_Answered = &now
 	}
 
 	updateQuery := initializers.DB.Update("prayer").
