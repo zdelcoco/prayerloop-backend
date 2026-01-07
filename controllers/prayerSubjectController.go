@@ -426,6 +426,18 @@ func UpdatePrayerSubject(c *gin.Context) {
 		updateRecord["use_linked_user_photo"] = *updateData.Use_Linked_User_Photo
 	}
 
+	if updateData.User_Profile_ID != nil {
+		// Allow setting userProfileId to link this contact to a Prayerloop user
+		// Value of 0 or negative means unlink (set to null)
+		if *updateData.User_Profile_ID > 0 {
+			updateRecord["user_profile_id"] = *updateData.User_Profile_ID
+			updateRecord["link_status"] = "linked"
+		} else {
+			updateRecord["user_profile_id"] = nil
+			updateRecord["link_status"] = "unlinked"
+		}
+	}
+
 	// Check if there are fields to update beyond updated_by and datetime_update
 	if len(updateRecord) <= 2 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No valid fields provided for update"})
