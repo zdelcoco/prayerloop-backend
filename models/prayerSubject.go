@@ -53,6 +53,7 @@ type PrayerSubjectUpdate struct {
 	Notes                       *string `json:"notes"`
 	Photo_S3_Key                *string `json:"photoS3Key"`
 	Use_Linked_User_Photo       *bool   `json:"useLinkedUserPhoto"`
+	User_Profile_ID             *int    `json:"userProfileId"`
 }
 
 // PrayerSubjectMembership represents a member in a family/group prayer subject

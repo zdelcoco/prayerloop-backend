@@ -183,6 +183,42 @@ func AddPrayerAccess(c *gin.Context) {
 		return
 	}
 
+	// Validate access type
+	if newPrayerAccess.Access_Type != "user" && newPrayerAccess.Access_Type != "group" && newPrayerAccess.Access_Type != "subject" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid access type. Must be 'user', 'group', or 'subject'"})
+		return
+	}
+
+	// For 'subject' access type, verify the prayer_subject exists and user owns it
+	if newPrayerAccess.Access_Type == "subject" {
+		var prayerSubject models.PrayerSubject
+		subjectFound, err := initializers.DB.From("prayer_subject").
+			Select(
+				"prayer_subject_id",
+				"prayer_subject_type",
+				"prayer_subject_display_name",
+				"created_by",
+			).
+			Where(goqu.C("prayer_subject_id").Eq(newPrayerAccess.Access_Type_ID)).
+			ScanStruct(&prayerSubject)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch prayer subject", "details": err.Error()})
+			return
+		}
+
+		if !subjectFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Prayer subject not found"})
+			return
+		}
+
+		// User must own the prayer_subject to add prayers to it
+		if prayerSubject.Created_By != userID {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "You can only add prayers to your own contacts"})
+			return
+		}
+	}
+
 	var existingPrayer models.Prayer
 	prayerFound, err := initializers.DB.From("prayer").
 		Where(goqu.C("prayer_id").Eq(prayerId), goqu.C("deleted").Eq(false)).
@@ -253,10 +289,25 @@ func AddPrayerAccess(c *gin.Context) {
 			return
 		}
 
-		if !admin && prayerAccess.Created_By != userID {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "You are not authorized to grant access to this prayer"})
-			return
-		} else if accessFound || admin {
+		// For 'subject' access type, user just needs to be able to view the prayer (accessFound)
+		// For 'user' and 'group' access types, user must be the prayer creator
+		if !admin {
+			if newPrayerAccess.Access_Type == "subject" {
+				// For subject access, user just needs view access to the prayer
+				if !accessFound {
+					c.JSON(http.StatusUnauthorized, gin.H{"error": "You don't have access to this prayer"})
+					return
+				}
+			} else {
+				// For user/group access, user must be the prayer creator
+				if prayerAccess.Created_By != userID {
+					c.JSON(http.StatusUnauthorized, gin.H{"error": "You are not authorized to grant access to this prayer"})
+					return
+				}
+			}
+		}
+
+		if accessFound || admin {
 
 			prayerAccessInsert := models.PrayerAccess{
 				Prayer_ID:      prayerId,
@@ -422,6 +473,34 @@ func RemovePrayerAccess(c *gin.Context) {
 			}
 
 			c.JSON(http.StatusOK, gin.H{"message": "Prayer and all access records removed successfully"})
+			return
+		}
+	} else if existingPrayerAccess.Access_Type == "subject" {
+		// For subject access, verify user owns the prayer_subject
+		var prayerSubject models.PrayerSubject
+		subjectFound, err := initializers.DB.From("prayer_subject").
+			Select(
+				"prayer_subject_id",
+				"prayer_subject_type",
+				"prayer_subject_display_name",
+				"created_by",
+			).
+			Where(goqu.C("prayer_subject_id").Eq(existingPrayerAccess.Access_Type_ID)).
+			ScanStruct(&prayerSubject)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch prayer subject", "details": err.Error()})
+			return
+		}
+
+		if !subjectFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Prayer subject not found"})
+			return
+		}
+
+		// Allow deletion if user is admin or owns the prayer_subject
+		if !admin && prayerSubject.Created_By != userID {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "You can only remove prayers from your own contacts"})
 			return
 		}
 	}

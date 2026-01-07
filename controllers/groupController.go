@@ -635,6 +635,7 @@ func GetGroupPrayers(c *gin.Context) {
 			goqu.I("prayer.deleted"),
 			goqu.I("prayer.prayer_subject_id"),
 			goqu.I("prayer_subject.prayer_subject_display_name"),
+			goqu.I("prayer_subject.user_profile_id").As("prayer_subject_user_profile_id"),
 			goqu.I("prayer_category.prayer_category_id"),
 			goqu.I("prayer_category.category_name"),
 			goqu.I("prayer_category.category_color"),
