@@ -82,6 +82,8 @@ func main() {
 		// notification routes
 		auth.GET("/users/:user_profile_id/notifications", controllers.GetUserNotifications)
 		auth.PATCH("/users/:user_profile_id/notifications/:notification_id", controllers.ToggleUserNotificationStatus)
+		auth.DELETE("/users/:user_profile_id/notifications/:notification_id", controllers.DeleteUserNotification)
+		auth.PATCH("/users/:user_profile_id/notifications/mark-all-read", controllers.MarkAllNotificationsAsRead)
 
 		// group routes
 		auth.GET("/groups", controllers.GetAllGroups)
