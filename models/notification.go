@@ -4,11 +4,25 @@ import "time"
 
 // Notification type constants
 const (
-	NotificationTypePrayerCreatedForYou  = "PRAYER_CREATED_FOR_YOU"
+	// NotificationTypePrayerCreatedForYou fires when a user creates a prayer for a linked subject.
+	// Recipient: The linked subject (prayer_subject.user_profile_id).
+	NotificationTypePrayerCreatedForYou = "PRAYER_CREATED_FOR_YOU"
+
+	// NotificationTypePrayerEditedBySubject fires when a linked subject edits a prayer about them.
+	// Recipient: The prayer creator (prayer.created_by).
 	NotificationTypePrayerEditedBySubject = "PRAYER_EDITED_BY_SUBJECT"
-	NotificationTypePrayerShared         = "PRAYER_SHARED"
-	NotificationTypeGroupInvite          = "GROUP_INVITE"
-	NotificationTypeGroupMemberJoined    = "GROUP_MEMBER_JOINED"
+
+	// NotificationTypePrayerShared fires when a prayer is shared to a circle/group.
+	// Recipients: All other members of the circle/group.
+	NotificationTypePrayerShared = "PRAYER_SHARED"
+
+	// NotificationTypeGroupInvite fires when a user is invited to join a group.
+	// Recipient: The invited user.
+	NotificationTypeGroupInvite = "GROUP_INVITE"
+
+	// NotificationTypeGroupMemberJoined fires when a user accepts a group invitation.
+	// Recipients: All existing group members.
+	NotificationTypeGroupMemberJoined = "GROUP_MEMBER_JOINED"
 )
 
 // Notification status constants
