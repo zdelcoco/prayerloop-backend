@@ -833,3 +833,75 @@ func DeletePrayer(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Prayer record marked as deleted successfully"})
 }
+
+// HistoryEntry represents a single entry in the prayer edit history response
+type HistoryEntry struct {
+	History_ID      int       `json:"historyId" db:"prayer_edit_history_id"`
+	Action_Type     string    `json:"actionType" db:"action_type"`
+	Actor_ID        int       `json:"actorId" db:"user_profile_id"`
+	Actor_Name      string    `json:"actorName" db:"actor_name"`
+	DateTime_Create time.Time `json:"datetimeCreate" db:"datetime_create"`
+}
+
+// GetPrayerHistory returns the chronological edit history of a prayer.
+// Only the prayer creator can view history (privacy requirement).
+func GetPrayerHistory(c *gin.Context) {
+	userID := c.MustGet("currentUser").(models.UserProfile).User_Profile_ID
+	admin := c.MustGet("admin").(bool)
+
+	prayerID, err := strconv.Atoi(c.Param("prayer_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prayer ID", "details": err.Error()})
+		return
+	}
+
+	// Fetch the prayer to check authorization
+	var prayer models.Prayer
+	prayerFound, err := initializers.DB.From("prayer").
+		Select("prayer_id", "created_by").
+		Where(goqu.C("prayer_id").Eq(prayerID)).
+		ScanStruct(&prayer)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch prayer", "details": err.Error()})
+		return
+	}
+
+	if !prayerFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Prayer not found"})
+		return
+	}
+
+	// Only the prayer creator (or admin) can view history
+	if prayer.Created_By != userID && !admin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Only the prayer creator can view history"})
+		return
+	}
+
+	// Fetch history with actor names
+	var history []HistoryEntry
+	err = initializers.DB.From("prayer_edit_history").
+		Select(
+			goqu.I("prayer_edit_history.prayer_edit_history_id"),
+			goqu.I("prayer_edit_history.action_type"),
+			goqu.I("prayer_edit_history.user_profile_id"),
+			goqu.L("COALESCE(user_profile.first_name, user_profile.username, 'Unknown')").As("actor_name"),
+			goqu.I("prayer_edit_history.datetime_create"),
+		).
+		Join(
+			goqu.T("user_profile"),
+			goqu.On(goqu.I("prayer_edit_history.user_profile_id").Eq(goqu.I("user_profile.user_profile_id"))),
+		).
+		Where(goqu.I("prayer_edit_history.prayer_id").Eq(prayerID)).
+		Order(goqu.I("prayer_edit_history.datetime_create").Asc()).
+		ScanStructs(&history)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch prayer history", "details": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"history": history,
+	})
+}
