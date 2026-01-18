@@ -35,6 +35,7 @@ type UserPrayer struct {
 	Prayer_Subject_ID              *int       `json:"prayerSubjectId" db:"prayer_subject_id" goqu:"skipinsert"`
 	Prayer_Subject_Display_Name    *string    `json:"prayerSubjectDisplayName,omitempty" db:"prayer_subject_display_name" goqu:"skipinsert"`
 	Prayer_Subject_User_Profile_ID *int       `json:"prayerSubjectUserProfileId,omitempty" db:"prayer_subject_user_profile_id" goqu:"skipinsert"`
+	Link_Status                    *string    `json:"linkStatus,omitempty" db:"link_status" goqu:"skipinsert"`
 	Datetime_Answered              *time.Time `json:"datetimeAnswered" db:"datetime_answered"`
 	Created_By                     int        `json:"createdBy" db:"created_by"`
 	Datetime_Create                time.Time  `json:"datetimeCreate" db:"datetime_create" goqu:"skipinsert"`
