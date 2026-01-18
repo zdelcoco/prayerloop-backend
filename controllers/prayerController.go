@@ -389,6 +389,53 @@ func AddPrayerAccess(c *gin.Context) {
 				}(newPrayerAccess.Access_Type_ID, userID, prayerId, existingPrayer.Created_By)
 			}
 
+			// Send PRAYER_CREATED_FOR_YOU notification to linked subject (async)
+			if newPrayerAccess.Access_Type == "group" && existingPrayer.Prayer_Subject_ID != nil {
+				go func(subjectPrayerID int, existingPrayerSubjectID int, actorID int, groupID int) {
+					// Check if prayer has a linked subject
+					var subjectUserID int
+					found, err := initializers.DB.From("prayer_subject").
+						Select("user_profile_id").
+						Where(
+							goqu.And(
+								goqu.C("prayer_subject_id").Eq(existingPrayerSubjectID),
+								goqu.C("link_status").Eq("linked"),
+								goqu.C("user_profile_id").IsNotNull(),
+							),
+						).ScanVal(&subjectUserID)
+
+					if err != nil || !found {
+						return // No linked subject
+					}
+
+					// Don't notify if subject is the actor (sharing prayer about themselves)
+					if subjectUserID == actorID {
+						return
+					}
+
+					// Get actor display name
+					var actorName string
+					initializers.DB.From("user_profile").
+						Select("first_name").
+						Where(goqu.C("user_profile_id").Eq(actorID)).
+						ScanVal(&actorName)
+					if actorName == "" {
+						initializers.DB.From("user_profile").
+							Select("username").
+							Where(goqu.C("user_profile_id").Eq(actorID)).
+							ScanVal(&actorName)
+					}
+
+					// Get group name
+					groupName, err := GetGroupNameByID(groupID)
+					if err != nil {
+						groupName = "a circle"
+					}
+
+					services.NotifySubjectOfPrayerCreated(subjectUserID, subjectPrayerID, actorID, actorName, groupName)
+				}(prayerId, *existingPrayer.Prayer_Subject_ID, userID, newPrayerAccess.Access_Type_ID)
+			}
+
 			c.JSON(http.StatusOK, gin.H{"message": "Prayer access added successfully"})
 		}
 	} else {
