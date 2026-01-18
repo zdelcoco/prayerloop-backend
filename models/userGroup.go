@@ -7,6 +7,7 @@ type UserGroup struct {
 	User_Profile_ID        int       `json:"userId"`
 	Group_Profile_ID       int       `json:"groupId"`
 	Is_Active              bool      `json:"isActive"`
+	Mute_Notifications     bool      `json:"muteNotifications" goqu:"mute_notifications"`
 	Group_Display_Sequence int       `json:"groupDisplaySequence"`
 	Created_By             int       `json:"createdBy"`
 	Updated_By             int       `json:"updatedBy"`
