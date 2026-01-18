@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"strconv"
-	"time"
 
 	"github.com/PrayerLoop/initializers"
 	"github.com/PrayerLoop/models"
@@ -15,49 +14,39 @@ import (
 // Uses atomic upsert to prevent race conditions. Also cleans up old records (>24h).
 // Returns true if notification should be sent.
 func shouldSendDebounced(notifType string, targetUserID int, entityID int, windowMinutes int) bool {
-	// First, lazy cleanup of old records (older than 24 hours)
+	// Lazy cleanup of old records (older than 24 hours)
 	initializers.DB.Delete("notification_debounce").
 		Where(goqu.L("last_triggered_at < NOW() - INTERVAL '24 hours'")).
 		Executor().Exec()
 
-	// Check if within debounce window using atomic upsert
-	// ON CONFLICT updates last_triggered_at only if outside window, returns whether update happened
-	var lastTriggered time.Time
-	found, err := initializers.DB.From("notification_debounce").
-		Select("last_triggered_at").
-		Where(
-			goqu.C("notification_type").Eq(notifType),
-			goqu.C("target_user_id").Eq(targetUserID),
-			goqu.C("entity_id").Eq(entityID),
-		).
-		ScanVal(&lastTriggered)
+	// Atomic upsert that returns whether notification should be sent
+	// Uses INSERT...ON CONFLICT DO UPDATE with a WHERE clause that only updates
+	// if outside the debounce window. RETURNING tells us if update happened.
+	query := `
+		INSERT INTO notification_debounce (notification_type, target_user_id, entity_id, last_triggered_at)
+		VALUES ($1, $2, $3, NOW())
+		ON CONFLICT (notification_type, target_user_id, entity_id)
+		DO UPDATE SET last_triggered_at = NOW()
+		WHERE notification_debounce.last_triggered_at < NOW() - ($4 || ' minutes')::INTERVAL
+		RETURNING debounce_id
+	`
+
+	var debounceID int
+	_, err := initializers.DB.ScanVal(&debounceID, query, notifType, targetUserID, entityID, windowMinutes)
 
 	if err != nil {
-		log.Printf("Error checking debounce: %v", err)
+		// No rows returned means either:
+		// 1. Record exists and is within window (DO UPDATE WHERE clause failed)
+		// 2. Database error
+		// Check if it's a "no rows" situation vs actual error
+		if err.Error() == "sql: no rows in result set" {
+			return false // Within debounce window
+		}
+		log.Printf("Error in debounce check: %v", err)
 		return true // On error, allow notification
 	}
 
-	if found && time.Since(lastTriggered) < time.Duration(windowMinutes)*time.Minute {
-		return false // Within debounce window
-	}
-
-	// Insert or update the debounce record
-	_, err = initializers.DB.Insert("notification_debounce").
-		Rows(goqu.Record{
-			"notification_type": notifType,
-			"target_user_id":    targetUserID,
-			"entity_id":         entityID,
-			"last_triggered_at": time.Now(),
-		}).
-		OnConflict(goqu.DoUpdate("notification_type, target_user_id, entity_id",
-			goqu.Record{"last_triggered_at": time.Now()})).
-		Executor().Exec()
-
-	if err != nil {
-		log.Printf("Error upserting debounce record: %v", err)
-	}
-
-	return true
+	return true // Row was inserted/updated, send notification
 }
 
 // NotifySubjectOfPrayerCreated sends PRAYER_CREATED_FOR_YOU to a linked subject.
