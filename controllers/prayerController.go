@@ -327,6 +327,22 @@ func AddPrayerAccess(c *gin.Context) {
 				return
 			}
 
+			// Log prayer share to history (async, non-blocking) - only for group shares
+			if newPrayerAccess.Access_Type == "group" {
+				go func(prayerID int, uid int) {
+					historyEntry := models.PrayerEditHistory{
+						Prayer_ID:       prayerID,
+						User_Profile_ID: uid,
+						Action_Type:     models.HistoryActionShared,
+					}
+					insertHistory := initializers.DB.Insert("prayer_edit_history").Rows(historyEntry)
+					_, err := insertHistory.Executor().Exec()
+					if err != nil {
+						log.Printf("Failed to log prayer share to history: %v", err)
+					}
+				}(prayerId, userID)
+			}
+
 			c.JSON(http.StatusOK, gin.H{"message": "Prayer access added successfully"})
 		}
 	} else {
@@ -558,9 +574,40 @@ func UpdatePrayer(c *gin.Context) {
 		return
 	}
 
-	if !admin && existingPrayer.Created_By != userID {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "You are not authorized to update this prayer"})
+	// Check if user is authorized to edit this prayer
+	// Allowed: admin, prayer creator, OR linked subject
+	canEdit := admin || existingPrayer.Created_By == userID
+
+	// If not already authorized, check if user is the linked subject
+	if !canEdit && existingPrayer.Prayer_Subject_ID != nil {
+		var prayerSubject models.PrayerSubject
+		subjectFound, err := initializers.DB.From("prayer_subject").
+			Select("prayer_subject_id", "user_profile_id", "link_status").
+			Where(goqu.C("prayer_subject_id").Eq(*existingPrayer.Prayer_Subject_ID)).
+			ScanStruct(&prayerSubject)
+
+		if err == nil && subjectFound {
+			// User can edit if they are linked to the subject
+			if prayerSubject.User_Profile_ID != nil &&
+				*prayerSubject.User_Profile_ID == userID &&
+				prayerSubject.Link_Status == "linked" {
+				canEdit = true
+			}
+		}
+	}
+
+	if !canEdit {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Only the prayer creator or subject can edit"})
 		return
+	}
+
+	// If user is the subject (not the creator), prevent changing prayer_subject_id
+	isSubjectEdit := canEdit && existingPrayer.Created_By != userID && !admin
+	if isSubjectEdit && updatedPrayer.Prayer_Subject_ID != nil {
+		if existingPrayer.Prayer_Subject_ID == nil || *updatedPrayer.Prayer_Subject_ID != *existingPrayer.Prayer_Subject_ID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Only the prayer creator can change who this prayer is for"})
+			return
+		}
 	}
 
 	// if any incoming field is nil, retain the existing value
@@ -616,6 +663,27 @@ func UpdatePrayer(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "No rows were updated"})
 		return
 	}
+
+	// Determine action type - use "answered" if prayer is being marked answered for first time
+	actionType := models.HistoryActionEdited
+	if updatedPrayer.Is_Answered != nil && *updatedPrayer.Is_Answered &&
+		(existingPrayer.Is_Answered == nil || !*existingPrayer.Is_Answered) {
+		actionType = models.HistoryActionAnswered
+	}
+
+	// Log prayer edit to history (async, non-blocking)
+	go func(prayerID int, uid int, action string) {
+		historyEntry := models.PrayerEditHistory{
+			Prayer_ID:       prayerID,
+			User_Profile_ID: uid,
+			Action_Type:     action,
+		}
+		insert := initializers.DB.Insert("prayer_edit_history").Rows(historyEntry)
+		_, err := insert.Executor().Exec()
+		if err != nil {
+			log.Printf("Failed to log prayer %s to history: %v", action, err)
+		}
+	}(prayerId, userID, actionType)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Prayer record updated successfully"})
 
@@ -687,6 +755,20 @@ func DeletePrayer(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "No rows were marked as deleted"})
 		return
 	}
+
+	// Log prayer deletion to history (async, non-blocking)
+	go func(prayerID int, uid int) {
+		historyEntry := models.PrayerEditHistory{
+			Prayer_ID:       prayerID,
+			User_Profile_ID: uid,
+			Action_Type:     models.HistoryActionDeleted,
+		}
+		insert := initializers.DB.Insert("prayer_edit_history").Rows(historyEntry)
+		_, err := insert.Executor().Exec()
+		if err != nil {
+			log.Printf("Failed to log prayer deletion to history: %v", err)
+		}
+	}(prayerId, userID)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Prayer record marked as deleted successfully"})
 }
