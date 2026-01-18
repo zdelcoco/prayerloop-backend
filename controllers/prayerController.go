@@ -770,6 +770,29 @@ func UpdatePrayer(c *gin.Context) {
 		}
 	}(prayerId, userID, actionType)
 
+	// Send PRAYER_EDITED_BY_SUBJECT notification to creator (async)
+	if isSubjectEdit {
+		go func(creatorID int, pID int, subjectUID int) {
+			// Get subject's display name
+			var subjectName string
+			initializers.DB.From("user_profile").
+				Select("first_name").
+				Where(goqu.C("user_profile_id").Eq(subjectUID)).
+				ScanVal(&subjectName)
+			if subjectName == "" {
+				initializers.DB.From("user_profile").
+					Select("username").
+					Where(goqu.C("user_profile_id").Eq(subjectUID)).
+					ScanVal(&subjectName)
+			}
+			if subjectName == "" {
+				subjectName = "Someone"
+			}
+
+			services.NotifyCreatorOfSubjectEdit(creatorID, pID, subjectUID, subjectName)
+		}(existingPrayer.Created_By, prayerId, userID)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "Prayer record updated successfully"})
 
 }

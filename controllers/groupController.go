@@ -866,6 +866,13 @@ func CreateGroupPrayer(c *gin.Context) {
 		services.NotifyCircleOfPrayerShared(gID, gName, actorID, actorName, pID, creatorID, subjectID)
 	}(groupID, groupName, currentUser.User_Profile_ID, displayName, insertedPrayerID, currentUser.User_Profile_ID, linkedSubjectUserID)
 
+	// Send PRAYER_CREATED_FOR_YOU notification to linked subject (async)
+	if linkedSubjectUserID != nil && *linkedSubjectUserID != currentUser.User_Profile_ID {
+		go func(subjectID int, pID int, actorID int, actorName string, gName string) {
+			services.NotifySubjectOfPrayerCreated(subjectID, pID, actorID, actorName, gName)
+		}(*linkedSubjectUserID, insertedPrayerID, currentUser.User_Profile_ID, displayName, groupName)
+	}
+
 	// Log prayer creation to history (async, non-blocking)
 	go func(prayerID int, userID int) {
 		historyEntry := models.PrayerEditHistory{
