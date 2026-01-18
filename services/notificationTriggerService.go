@@ -32,7 +32,7 @@ func shouldSendDebounced(notifType string, targetUserID int, entityID int, windo
 	`
 
 	var debounceID int
-	_, err := initializers.DB.ScanVal(&debounceID, query, notifType, targetUserID, entityID, windowMinutes)
+	err := initializers.DB.QueryRow(query, notifType, targetUserID, entityID, windowMinutes).Scan(&debounceID)
 
 	if err != nil {
 		// No rows returned means either:
