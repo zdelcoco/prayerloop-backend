@@ -714,8 +714,30 @@ func DeletePrayer(c *gin.Context) {
 		return
 	}
 
-	if !admin && existingPrayer.Created_By != userID {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "You are not authorized to delete this prayer"})
+	// Check if user is authorized to delete this prayer
+	// Allowed: admin, prayer creator, OR linked subject
+	canDelete := admin || existingPrayer.Created_By == userID
+
+	// If not already authorized, check if user is the linked subject
+	if !canDelete && existingPrayer.Prayer_Subject_ID != nil {
+		var prayerSubject models.PrayerSubject
+		subjectFound, err := initializers.DB.From("prayer_subject").
+			Select("prayer_subject_id", "user_profile_id", "link_status").
+			Where(goqu.C("prayer_subject_id").Eq(*existingPrayer.Prayer_Subject_ID)).
+			ScanStruct(&prayerSubject)
+
+		if err == nil && subjectFound {
+			// User can delete if they are linked to the subject
+			if prayerSubject.User_Profile_ID != nil &&
+				*prayerSubject.User_Profile_ID == userID &&
+				prayerSubject.Link_Status == "linked" {
+				canDelete = true
+			}
+		}
+	}
+
+	if !canDelete {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Only the prayer creator or subject can delete"})
 		return
 	}
 
