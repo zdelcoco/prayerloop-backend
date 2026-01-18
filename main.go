@@ -113,6 +113,7 @@ func main() {
 		auth.DELETE("/prayers/:prayer_id", controllers.DeletePrayer)
 		auth.POST("/prayers/:prayer_id/access", controllers.AddPrayerAccess)
 		auth.DELETE("/prayers/:prayer_id/access/:prayer_access_id", controllers.RemovePrayerAccess)
+		auth.GET("/prayers/:prayer_id/history", controllers.GetPrayerHistory)
 
 		// prayer subject routes (resource-level operations)
 		auth.PATCH("/prayer-subjects/:prayer_subject_id", controllers.UpdatePrayerSubject)
