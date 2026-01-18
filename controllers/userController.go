@@ -533,7 +533,7 @@ func GetUserPrayers(c *gin.Context) {
 			goqu.I("prayer_category.prayer_category_id"),
 			goqu.I("prayer_category.category_name"),
 			goqu.I("prayer_category.category_color"),
-			goqu.I("prayer_category.display_sequence").As("category_display_seq"),
+			goqu.I("prayer_category.display_sequence").As("category_display_sequence"),
 		).
 		Join(
 			goqu.T("prayer"),
@@ -711,6 +711,20 @@ func CreateUserPrayer(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create prayer access record", "details": err.Error()})
 		return
 	}
+
+	// Log prayer creation to history (async, non-blocking)
+	go func(prayerID int, userID int) {
+		historyEntry := models.PrayerEditHistory{
+			Prayer_ID:       prayerID,
+			User_Profile_ID: userID,
+			Action_Type:     models.HistoryActionCreated,
+		}
+		insert := initializers.DB.Insert("prayer_edit_history").Rows(historyEntry)
+		_, err := insert.Executor().Exec()
+		if err != nil {
+			log.Printf("Failed to log prayer creation to history: %v", err)
+		}
+	}(insertedPrayerID, currentUser.User_Profile_ID)
 
 	c.JSON(http.StatusCreated, gin.H{"message": "Prayer created sucessfully!",
 		"prayerId":       insertedPrayerID,

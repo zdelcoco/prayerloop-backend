@@ -82,7 +82,7 @@ func GetUserPrayerSubjects(c *gin.Context) {
 				goqu.I("prayer_category.prayer_category_id"),
 				goqu.I("prayer_category.category_name"),
 				goqu.I("prayer_category.category_color"),
-				goqu.I("prayer_category.display_sequence").As("category_display_seq"),
+				goqu.I("prayer_category.display_sequence").As("category_display_sequence"),
 			).
 			Join(
 				goqu.T("prayer"),
@@ -166,7 +166,7 @@ func GetUserPrayerSubjects(c *gin.Context) {
 							goqu.I("prayer_category.prayer_category_id"),
 							goqu.I("prayer_category.category_name"),
 							goqu.I("prayer_category.category_color"),
-							goqu.I("prayer_category.display_sequence").As("category_display_seq"),
+							goqu.I("prayer_category.display_sequence").As("category_display_sequence"),
 						).
 						Join(
 							goqu.T("prayer"),
