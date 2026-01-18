@@ -125,7 +125,7 @@ func GetCircleMembersForNotification(groupID int, excludeUserIDs []int) ([]int, 
 			goqu.And(
 				goqu.C("group_profile_id").Eq(groupID),
 				goqu.C("is_active").IsTrue(),
-				goqu.C("mute_notifications").IsFalse(),
+				goqu.L("COALESCE(mute_notifications, FALSE) = FALSE"),
 			),
 		)
 
