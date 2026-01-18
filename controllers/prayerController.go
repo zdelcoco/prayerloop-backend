@@ -12,6 +12,7 @@ import (
 
 	"github.com/PrayerLoop/initializers"
 	"github.com/PrayerLoop/models"
+	"github.com/PrayerLoop/services"
 	"github.com/doug-martin/goqu/v9"
 )
 
@@ -341,6 +342,51 @@ func AddPrayerAccess(c *gin.Context) {
 						log.Printf("Failed to log prayer share to history: %v", err)
 					}
 				}(prayerId, userID)
+			}
+
+			// Send circle notification for group shares (async)
+			if newPrayerAccess.Access_Type == "group" {
+				go func(groupID int, actorID int, prayerID int, creatorID int) {
+					// Get group name
+					groupName, err := GetGroupNameByID(groupID)
+					if err != nil {
+						log.Printf("Failed to get group name for notification: %v", err)
+						return
+					}
+
+					// Get actor display name
+					var actorName string
+					initializers.DB.From("user_profile").
+						Select("first_name").
+						Where(goqu.C("user_profile_id").Eq(actorID)).
+						ScanVal(&actorName)
+					if actorName == "" {
+						initializers.DB.From("user_profile").
+							Select("username").
+							Where(goqu.C("user_profile_id").Eq(actorID)).
+							ScanVal(&actorName)
+					}
+
+					// Get linked subject if prayer has one
+					var linkedSubjectUserID *int
+					if existingPrayer.Prayer_Subject_ID != nil {
+						var subjectUserID int
+						found, _ := initializers.DB.From("prayer_subject").
+							Select("user_profile_id").
+							Where(
+								goqu.And(
+									goqu.C("prayer_subject_id").Eq(*existingPrayer.Prayer_Subject_ID),
+									goqu.C("link_status").Eq("linked"),
+									goqu.C("user_profile_id").IsNotNull(),
+								),
+							).ScanVal(&subjectUserID)
+						if found {
+							linkedSubjectUserID = &subjectUserID
+						}
+					}
+
+					services.NotifyCircleOfPrayerShared(groupID, groupName, actorID, actorName, prayerID, creatorID, linkedSubjectUserID)
+				}(newPrayerAccess.Access_Type_ID, userID, prayerId, existingPrayer.Created_By)
 			}
 
 			c.JSON(http.StatusOK, gin.H{"message": "Prayer access added successfully"})

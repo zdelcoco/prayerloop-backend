@@ -830,50 +830,41 @@ func CreateGroupPrayer(c *gin.Context) {
 		return
 	}
 
-	// Send push notification to other group members
-	go func() {
-		groupName, err := GetGroupNameByID(groupID)
-		if err != nil {
-			log.Printf("Failed to get group name for notification: %v", err)
-			return
-		}
+	// Get group name for notification
+	groupName, err := GetGroupNameByID(groupID)
+	if err != nil {
+		log.Printf("Failed to get group name for notification: %v", err)
+		groupName = "a circle" // Fallback
+	}
 
-		memberIDs, err := GetOtherGroupMemberIDs(groupID, currentUser.User_Profile_ID)
-		if err != nil {
-			log.Printf("Failed to get group member IDs for notification: %v", err)
-			return
-		}
+	// Get display name for actor
+	displayName := currentUser.First_Name
+	if displayName == "" {
+		displayName = currentUser.Username
+	}
 
-		if len(memberIDs) == 0 {
-			return
+	// Get linked subject user ID if prayer has a linked subject
+	var linkedSubjectUserID *int
+	if newPrayer.Prayer_Subject_ID != nil {
+		var subjectUserID int
+		found, _ := initializers.DB.From("prayer_subject").
+			Select("user_profile_id").
+			Where(
+				goqu.And(
+					goqu.C("prayer_subject_id").Eq(*newPrayer.Prayer_Subject_ID),
+					goqu.C("link_status").Eq("linked"),
+					goqu.C("user_profile_id").IsNotNull(),
+				),
+			).ScanVal(&subjectUserID)
+		if found {
+			linkedSubjectUserID = &subjectUserID
 		}
+	}
 
-		pushService := services.GetPushNotificationService()
-		if pushService == nil {
-			log.Println("Push notification service not available")
-			return
-		}
-
-		displayName := currentUser.First_Name
-		if displayName == "" {
-			displayName = currentUser.Username
-		}
-
-		payload := services.NotificationPayload{
-			Title: groupName,
-			Body:  fmt.Sprintf("%s added a new prayer", displayName),
-			Data: map[string]string{
-				"type":     "group_prayer_added",
-				"groupId":  strconv.Itoa(groupID),
-				"prayerId": strconv.Itoa(insertedPrayerID),
-			},
-		}
-
-		err = pushService.SendNotificationToUsers(memberIDs, payload)
-		if err != nil {
-			log.Printf("Failed to send group prayer notifications: %v", err)
-		}
-	}()
+	// Send notifications to circle members (async)
+	go func(gID int, gName string, actorID int, actorName string, pID int, creatorID int, subjectID *int) {
+		services.NotifyCircleOfPrayerShared(gID, gName, actorID, actorName, pID, creatorID, subjectID)
+	}(groupID, groupName, currentUser.User_Profile_ID, displayName, insertedPrayerID, currentUser.User_Profile_ID, linkedSubjectUserID)
 
 	// Log prayer creation to history (async, non-blocking)
 	go func(prayerID int, userID int) {
