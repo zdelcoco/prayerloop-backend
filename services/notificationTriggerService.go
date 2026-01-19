@@ -209,6 +209,64 @@ func NotifyCircleOfPrayerShared(
 	}
 }
 
+// NotifyCreatorOfPrayerRemovedFromGroup sends PRAYER_REMOVED_FROM_GROUP to the prayer creator.
+// Called when a linked subject removes a prayer from a group they didn't create.
+func NotifyCreatorOfPrayerRemovedFromGroup(
+	creatorID int,
+	prayerID int,
+	groupID int,
+	subjectUserID int,
+	subjectName string,
+	groupName string,
+) {
+	// Don't notify if creator is the one removing (they already know)
+	if creatorID == subjectUserID {
+		return
+	}
+
+	notificationMessage := fmt.Sprintf("%s removed a prayer you made for them from %s", subjectName, groupName)
+
+	// Create notification record with target for navigation
+	notification := models.Notification{
+		User_Profile_ID:      creatorID,
+		Notification_Type:    models.NotificationTypePrayerRemovedFromGroup,
+		Notification_Message: notificationMessage,
+		Notification_Status:  models.NotificationStatusUnread,
+		Created_By:           subjectUserID,
+		Updated_By:           subjectUserID,
+		Target_Prayer_ID:     &prayerID,
+		Target_Group_ID:      &groupID,
+	}
+
+	insert := initializers.DB.Insert("notification").Rows(notification)
+	_, err := insert.Executor().Exec()
+	if err != nil {
+		log.Printf("Failed to create PRAYER_REMOVED_FROM_GROUP notification for user %d: %v", creatorID, err)
+	}
+
+	// Send push notification
+	pushService := GetPushNotificationService()
+	if pushService == nil {
+		log.Println("Push notification service not available")
+		return
+	}
+
+	payload := NotificationPayload{
+		Title: groupName,
+		Body:  notificationMessage,
+		Data: map[string]string{
+			"type":     "prayer_removed_from_group",
+			"prayerId": strconv.Itoa(prayerID),
+			"groupId":  strconv.Itoa(groupID),
+		},
+	}
+
+	err = pushService.SendNotificationToUser(creatorID, payload)
+	if err != nil {
+		log.Printf("Failed to send PRAYER_REMOVED_FROM_GROUP push notification: %v", err)
+	}
+}
+
 // NotifyCreatorOfSubjectEdit sends PRAYER_EDITED_BY_SUBJECT to the prayer creator.
 // Debounced with 15-minute window to prevent notification spam from rapid edits.
 func NotifyCreatorOfSubjectEdit(

@@ -23,6 +23,10 @@ const (
 	// NotificationTypeGroupMemberJoined fires when a user accepts a group invitation.
 	// Recipients: All existing group members.
 	NotificationTypeGroupMemberJoined = "GROUP_MEMBER_JOINED"
+
+	// NotificationTypePrayerRemovedFromGroup fires when a linked subject removes a prayer from a group.
+	// Recipient: The prayer creator.
+	NotificationTypePrayerRemovedFromGroup = "PRAYER_REMOVED_FROM_GROUP"
 )
 
 // Notification status constants

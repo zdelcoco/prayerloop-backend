@@ -501,6 +501,12 @@ func RemovePrayerAccess(c *gin.Context) {
 		return
 	}
 
+	// Track if linked subject is removing from group (for notification)
+	var linkedSubjectRemoving bool
+	var linkedSubjectName string
+	var groupNameForNotification string
+	var groupIDForNotification int
+
 	if existingPrayerAccess.Access_Type == "group" {
 		var group models.GroupProfile
 		groupFound, err := initializers.DB.From("group_profile").
@@ -549,6 +555,25 @@ func RemovePrayerAccess(c *gin.Context) {
 					*prayerSubject.User_Profile_ID == userID &&
 					prayerSubject.Link_Status == "linked" {
 					canDelete = true
+					// Track for notification: linked subject is removing from group
+					linkedSubjectRemoving = true
+					groupNameForNotification = group.Group_Name
+					groupIDForNotification = group.Group_Profile_ID
+					// Get subject's display name
+					var subjectUser models.UserProfile
+					userFound, _ := initializers.DB.From("user_profile").
+						Select("first_name", "username").
+						Where(goqu.C("user_profile_id").Eq(userID)).
+						ScanStruct(&subjectUser)
+					if userFound {
+						if subjectUser.First_Name != "" {
+							linkedSubjectName = subjectUser.First_Name
+						} else {
+							linkedSubjectName = subjectUser.Username
+						}
+					} else {
+						linkedSubjectName = "Someone"
+					}
 				}
 			}
 		}
@@ -668,6 +693,18 @@ func RemovePrayerAccess(c *gin.Context) {
 	if rowsAffected == 0 {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "No rows were deleted"})
 		return
+	}
+
+	// Notify prayer creator if linked subject removed from group
+	if linkedSubjectRemoving {
+		go services.NotifyCreatorOfPrayerRemovedFromGroup(
+			existingPrayer.Created_By,
+			prayerId,
+			groupIDForNotification,
+			userID,
+			linkedSubjectName,
+			groupNameForNotification,
+		)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Prayer access removed successfully"})
