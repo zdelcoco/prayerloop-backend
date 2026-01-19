@@ -65,7 +65,7 @@ func NotifySubjectOfPrayerCreated(
 
 	notificationMessage := fmt.Sprintf("%s created a prayer for you in %s", actorName, groupName)
 
-	// Create notification record
+	// Create notification record with target for navigation
 	notification := models.Notification{
 		User_Profile_ID:      subjectUserID,
 		Notification_Type:    models.NotificationTypePrayerCreatedForYou,
@@ -73,6 +73,7 @@ func NotifySubjectOfPrayerCreated(
 		Notification_Status:  models.NotificationStatusUnread,
 		Created_By:           actorID,
 		Updated_By:           actorID,
+		Target_Prayer_ID:     &prayerID,
 	}
 
 	insert := initializers.DB.Insert("notification").Rows(notification)
@@ -165,7 +166,7 @@ func NotifyCircleOfPrayerShared(
 
 	notificationMessage := fmt.Sprintf("%s shared a prayer with %s", actorName, groupName)
 
-	// Create notification records in database for each member
+	// Create notification records in database for each member with navigation targets
 	for _, memberID := range memberIDs {
 		notification := models.Notification{
 			User_Profile_ID:      memberID,
@@ -174,6 +175,8 @@ func NotifyCircleOfPrayerShared(
 			Notification_Status:  models.NotificationStatusUnread,
 			Created_By:           actorID,
 			Updated_By:           actorID,
+			Target_Prayer_ID:     &prayerID,
+			Target_Group_ID:      &groupID,
 		}
 
 		insert := initializers.DB.Insert("notification").Rows(notification)
@@ -222,7 +225,7 @@ func NotifyCreatorOfSubjectEdit(
 
 	notificationMessage := fmt.Sprintf("%s edited a prayer about them", subjectName)
 
-	// Create notification record
+	// Create notification record with target for navigation
 	notification := models.Notification{
 		User_Profile_ID:      creatorID,
 		Notification_Type:    models.NotificationTypePrayerEditedBySubject,
@@ -230,6 +233,7 @@ func NotifyCreatorOfSubjectEdit(
 		Notification_Status:  models.NotificationStatusUnread,
 		Created_By:           subjectUserID,
 		Updated_By:           subjectUserID,
+		Target_Prayer_ID:     &prayerID,
 	}
 
 	insert := initializers.DB.Insert("notification").Rows(notification)
