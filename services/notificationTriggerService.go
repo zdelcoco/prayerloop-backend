@@ -54,6 +54,7 @@ func shouldSendDebounced(notifType string, targetUserID int, entityID int, windo
 func NotifySubjectOfPrayerCreated(
 	subjectUserID int,
 	prayerID int,
+	groupID int,
 	actorID int,
 	actorName string,
 	groupName string,
@@ -74,6 +75,7 @@ func NotifySubjectOfPrayerCreated(
 		Created_By:           actorID,
 		Updated_By:           actorID,
 		Target_Prayer_ID:     &prayerID,
+		Target_Group_ID:      &groupID,
 	}
 
 	insert := initializers.DB.Insert("notification").Rows(notification)
@@ -95,6 +97,7 @@ func NotifySubjectOfPrayerCreated(
 		Data: map[string]string{
 			"type":     "prayer_created_for_you",
 			"prayerId": strconv.Itoa(prayerID),
+			"groupId":  strconv.Itoa(groupID),
 		},
 	}
 
