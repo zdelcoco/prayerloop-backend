@@ -38,7 +38,9 @@ func GetUserNotifications(c *gin.Context) {
 			"datetime_create",
 			"datetime_update",
 			"created_by",
-			"updated_by").
+			"updated_by",
+			"target_prayer_id",
+			"target_group_id").
 		Where(goqu.C("user_profile_id").Eq(userID)).
 		Order(goqu.C("datetime_create").Desc()).
 		ScanStructs(&notifications)
