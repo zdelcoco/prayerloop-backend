@@ -45,6 +45,6 @@ type Notification struct {
 	DateTime_Update      time.Time `json:"datetimeUpdate" goqu:"skipinsert"`
 	Created_By           int       `json:"createdBy"`
 	Updated_By           int       `json:"updatedBy"`
-	Target_Prayer_ID     *int      `json:"targetPrayerId" db:"target_prayer_id"`
-	Target_Group_ID      *int      `json:"targetGroupId" db:"target_group_id"`
+	Target_Prayer_ID     *int      `json:"targetPrayerId" db:"target_prayer_id" goqu:"skipupdate"`
+	Target_Group_ID      *int      `json:"targetGroupId" db:"target_group_id" goqu:"skipupdate"`
 }
