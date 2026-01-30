@@ -64,6 +64,26 @@ func NotifySubjectOfPrayerCreated(
 		return
 	}
 
+	// CRITICAL: Don't notify if subject is not a member of the circle
+	// This prevents privacy leaks where subjects learn about circles they're not in
+	var memberCount int
+	checkQuery := initializers.DB.From("user_group").
+		Select(goqu.COUNT("*")).
+		Where(
+			goqu.And(
+				goqu.C("group_profile_id").Eq(groupID),
+				goqu.C("user_profile_id").Eq(subjectUserID),
+				goqu.C("is_active").IsTrue(),
+			),
+		)
+
+	_, memberCheckErr := checkQuery.Executor().ScanVal(&memberCount)
+	if memberCheckErr != nil || memberCount == 0 {
+		// Subject is not a member of this circle - don't notify them
+		// This maintains privacy: subjects shouldn't know about circles they're not in
+		return
+	}
+
 	notificationMessage := fmt.Sprintf("%s created a prayer for you in %s", actorName, groupName)
 
 	// Create notification record with target for navigation
