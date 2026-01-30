@@ -293,16 +293,30 @@ func AddPrayerAccess(c *gin.Context) {
 		// For 'subject' access type, user just needs to be able to view the prayer (accessFound)
 		// For 'user' and 'group' access types, user must be the prayer creator
 		if !admin {
-			if newPrayerAccess.Access_Type == "subject" {
-				// For subject access, user just needs view access to the prayer
-				if !accessFound {
-					c.JSON(http.StatusUnauthorized, gin.H{"error": "You don't have access to this prayer"})
+			// User needs view access to the prayer to share it
+			if !accessFound {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "You don't have access to this prayer"})
+				return
+			}
+
+			// For group sharing, verify user is a member of the target group
+			if newPrayerAccess.Access_Type == "group" {
+				var count int64
+				found, err := initializers.DB.From("user_group").
+					Select(goqu.COUNT("*")).
+					Where(
+						goqu.C("group_profile_id").Eq(newPrayerAccess.Access_Type_ID),
+						goqu.C("user_profile_id").Eq(userID),
+					).
+					ScanVal(&count)
+
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify group membership", "details": err.Error()})
 					return
 				}
-			} else {
-				// For user/group access, user must be the prayer creator
-				if prayerAccess.Created_By != userID {
-					c.JSON(http.StatusUnauthorized, gin.H{"error": "You are not authorized to grant access to this prayer"})
+
+				if !found || count == 0 {
+					c.JSON(http.StatusUnauthorized, gin.H{"error": "You must be a member of the prayer circle to share this prayer with it"})
 					return
 				}
 			}
