@@ -1046,7 +1046,7 @@ func GetPrayerHistory(c *gin.Context) {
 	if !admin {
 		// Check if user has access to this prayer via prayer_access table
 		var count int64
-		_, err = initializers.DB.From("prayer_access").
+		found, err := initializers.DB.From("prayer_access").
 			Select(goqu.COUNT("*")).
 			Join(
 				goqu.T("user_group"),
@@ -1070,7 +1070,7 @@ func GetPrayerHistory(c *gin.Context) {
 			return
 		}
 
-		if count == 0 {
+		if !found || count == 0 {
 			c.JSON(http.StatusForbidden, gin.H{"error": "You don't have access to this prayer"})
 			return
 		}
