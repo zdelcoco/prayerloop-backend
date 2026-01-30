@@ -539,13 +539,14 @@ func RemovePrayerAccess(c *gin.Context) {
 			return
 		}
 
-		// Allow deletion if user is admin, prayer creator, group creator, or linked subject
+		// Allow deletion if user is admin, prayer creator, or group creator
 		canDelete := admin || existingPrayer.Created_By == userID || group.Created_By == userID
 		log.Printf("[RemovePrayerAccess] Group access removal - userID: %d, prayerCreator: %d, groupCreator: %d, admin: %v, canDelete (before subject check): %v",
 			userID, existingPrayer.Created_By, group.Created_By, admin, canDelete)
 
-		// If not already authorized, check if user is the linked subject
-		if !canDelete && existingPrayer.Prayer_Subject_ID != nil {
+		// Check if user is linked subject (needed for notification regardless of other auth)
+		var isLinkedSubject bool
+		if existingPrayer.Prayer_Subject_ID != nil {
 			log.Printf("[RemovePrayerAccess] Checking if user is linked subject - Prayer_Subject_ID: %d", *existingPrayer.Prayer_Subject_ID)
 			var prayerSubject models.PrayerSubject
 			subjectFound, err := initializers.DB.From("prayer_subject").
@@ -559,29 +560,37 @@ func RemovePrayerAccess(c *gin.Context) {
 				if prayerSubject.User_Profile_ID != nil &&
 					*prayerSubject.User_Profile_ID == userID &&
 					prayerSubject.Link_Status == "linked" {
-					canDelete = true
-					// Track for notification: linked subject is removing from group
-					linkedSubjectRemoving = true
-					log.Printf("[RemovePrayerAccess] Linked subject confirmed - will send notification after deletion")
-					groupNameForNotification = group.Group_Name
-					groupIDForNotification = group.Group_Profile_ID
-					// Get subject's display name
-					var subjectUser models.UserProfile
-					userFound, _ := initializers.DB.From("user_profile").
-						Select("first_name", "username").
-						Where(goqu.C("user_profile_id").Eq(userID)).
-						ScanStruct(&subjectUser)
-					if userFound {
-						if subjectUser.First_Name != "" {
-							linkedSubjectName = subjectUser.First_Name
-						} else {
-							linkedSubjectName = subjectUser.Username
-						}
-					} else {
-						linkedSubjectName = "Someone"
-					}
+					isLinkedSubject = true
 				}
 			}
+		}
+
+		// Track notification data if linked subject is removing from group
+		if isLinkedSubject {
+			linkedSubjectRemoving = true
+			groupNameForNotification = group.Group_Name
+			groupIDForNotification = group.Group_Profile_ID
+			log.Printf("[RemovePrayerAccess] Linked subject confirmed - will send notification after deletion")
+			// Get subject's display name
+			var subjectUser models.UserProfile
+			userFound, _ := initializers.DB.From("user_profile").
+				Select("first_name", "username").
+				Where(goqu.C("user_profile_id").Eq(userID)).
+				ScanStruct(&subjectUser)
+			if userFound {
+				if subjectUser.First_Name != "" {
+					linkedSubjectName = subjectUser.First_Name
+				} else {
+					linkedSubjectName = subjectUser.Username
+				}
+			} else {
+				linkedSubjectName = "Someone"
+			}
+		}
+
+		// If not already authorized (admin/creator/group creator), linked subject can delete
+		if !canDelete && isLinkedSubject {
+			canDelete = true
 		}
 
 		if !canDelete {
