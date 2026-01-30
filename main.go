@@ -111,6 +111,7 @@ func main() {
 		// prayer routes
 		auth.PUT("/prayers/:prayer_id", controllers.UpdatePrayer)
 		auth.DELETE("/prayers/:prayer_id", controllers.DeletePrayer)
+		auth.GET("/prayers/:prayer_id/access", controllers.GetPrayerAccessRecords)
 		auth.POST("/prayers/:prayer_id/access", controllers.AddPrayerAccess)
 		auth.DELETE("/prayers/:prayer_id/access/:prayer_access_id", controllers.RemovePrayerAccess)
 		auth.GET("/prayers/:prayer_id/history", controllers.GetPrayerHistory)

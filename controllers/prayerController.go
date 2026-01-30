@@ -1117,3 +1117,78 @@ func GetPrayerHistory(c *gin.Context) {
 		"history": history,
 	})
 }
+
+func GetPrayerAccessRecords(c *gin.Context) {
+	userID := c.MustGet("currentUser").(models.UserProfile).User_Profile_ID
+	admin := c.MustGet("admin").(bool)
+
+	prayerID, err := strconv.Atoi(c.Param("prayer_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prayer ID"})
+		return
+	}
+
+	// Check if user has access to this prayer
+	if !admin {
+		var count int64
+		found, err := initializers.DB.From("prayer_access").
+			Select(goqu.COUNT("*")).
+			Join(
+				goqu.T("user_group"),
+				goqu.On(
+					goqu.Or(
+						goqu.Ex{"prayer_access.access_type": "group", "prayer_access.access_type_id": goqu.I("user_group.group_profile_id")},
+						goqu.Ex{"prayer_access.access_type": "user", "prayer_access.access_type_id": goqu.I("user_group.user_profile_id")},
+					),
+				),
+			).
+			Where(
+				goqu.And(
+					goqu.I("prayer_access.prayer_id").Eq(prayerID),
+					goqu.I("user_group.user_profile_id").Eq(userID),
+				),
+			).
+			ScanVal(&count)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check prayer access", "details": err.Error()})
+			return
+		}
+
+		if !found || count == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"error": "You don't have access to this prayer"})
+			return
+		}
+	}
+
+	// Fetch all group access records for this prayer
+	var accessRecords []models.PrayerAccess
+	err = initializers.DB.From("prayer_access").
+		Select(
+			"prayer_access_id",
+			"prayer_id",
+			"access_type",
+			"access_type_id",
+		).
+		Where(
+			goqu.C("prayer_id").Eq(prayerID),
+			goqu.C("access_type").Eq("group"),
+		).
+		ScanStructs(&accessRecords)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch prayer access records", "details": err.Error()})
+		return
+	}
+
+	// Extract just the group IDs
+	groupIds := make([]int, len(accessRecords))
+	for i, record := range accessRecords {
+		groupIds[i] = record.Access_Type_ID
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Prayer access records retrieved successfully",
+		"groupIds": groupIds,
+	})
+}
