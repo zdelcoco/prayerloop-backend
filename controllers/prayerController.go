@@ -1042,10 +1042,38 @@ func GetPrayerHistory(c *gin.Context) {
 		return
 	}
 
-	// Only the prayer creator (or admin) can view history
-	if prayer.Created_By != userID && !admin {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Only the prayer creator can view history"})
-		return
+	// Allow anyone with prayer access to view history (same as viewing the prayer itself)
+	if !admin {
+		// Check if user has access to this prayer via prayer_access table
+		var hasAccess bool
+		err = initializers.DB.From("prayer_access").
+			Select(goqu.COUNT("*")).
+			Join(
+				goqu.T("user_group"),
+				goqu.On(
+					goqu.Or(
+						goqu.Ex{"prayer_access.access_type": "group", "prayer_access.access_type_id": goqu.I("user_group.group_profile_id")},
+						goqu.Ex{"prayer_access.access_type": "user", "prayer_access.access_type_id": goqu.I("user_group.user_profile_id")},
+					),
+				),
+			).
+			Where(
+				goqu.And(
+					goqu.I("prayer_access.prayer_id").Eq(prayerID),
+					goqu.I("user_group.user_profile_id").Eq(userID),
+				),
+			).
+			ScanVal(&hasAccess)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check prayer access", "details": err.Error()})
+			return
+		}
+
+		if !hasAccess {
+			c.JSON(http.StatusForbidden, gin.H{"error": "You don't have access to this prayer"})
+			return
+		}
 	}
 
 	// Fetch history with actor names
