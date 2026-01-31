@@ -370,15 +370,18 @@ func AddPrayerAccess(c *gin.Context) {
 
 					// Get actor display name
 					var actorName string
-					initializers.DB.From("user_profile").
+					_, nameErr := initializers.DB.From("user_profile").
 						Select("first_name").
 						Where(goqu.C("user_profile_id").Eq(actorID)).
-						ScanVal(&actorName)
-					if actorName == "" {
-						initializers.DB.From("user_profile").
+						Executor().ScanVal(&actorName)
+					if nameErr != nil || actorName == "" {
+						_, nameErr = initializers.DB.From("user_profile").
 							Select("username").
 							Where(goqu.C("user_profile_id").Eq(actorID)).
-							ScanVal(&actorName)
+							Executor().ScanVal(&actorName)
+						if nameErr != nil {
+							actorName = "Someone" // Fallback if both queries fail
+						}
 					}
 
 					// Get linked subject if prayer has one
@@ -429,15 +432,18 @@ func AddPrayerAccess(c *gin.Context) {
 
 					// Get actor display name
 					var actorName string
-					initializers.DB.From("user_profile").
+					_, nameErr := initializers.DB.From("user_profile").
 						Select("first_name").
 						Where(goqu.C("user_profile_id").Eq(actorID)).
-						ScanVal(&actorName)
-					if actorName == "" {
-						initializers.DB.From("user_profile").
+						Executor().ScanVal(&actorName)
+					if nameErr != nil || actorName == "" {
+						_, nameErr = initializers.DB.From("user_profile").
 							Select("username").
 							Where(goqu.C("user_profile_id").Eq(actorID)).
-							ScanVal(&actorName)
+							Executor().ScanVal(&actorName)
+						if nameErr != nil {
+							actorName = "Someone" // Fallback if both queries fail
+						}
 					}
 
 					// Get group name

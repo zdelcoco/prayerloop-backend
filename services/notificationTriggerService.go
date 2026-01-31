@@ -15,9 +15,12 @@ import (
 // Returns true if notification should be sent.
 func shouldSendDebounced(notifType string, targetUserID int, entityID int, windowMinutes int) bool {
 	// Lazy cleanup of old records (older than 24 hours)
-	initializers.DB.Delete("notification_debounce").
+	_, cleanupErr := initializers.DB.Delete("notification_debounce").
 		Where(goqu.L("last_triggered_at < NOW() - INTERVAL '24 hours'")).
 		Executor().Exec()
+	if cleanupErr != nil {
+		log.Printf("Error cleaning up old debounce records: %v", cleanupErr)
+	}
 
 	// Atomic upsert that returns whether notification should be sent
 	// Uses INSERT...ON CONFLICT DO UPDATE with a WHERE clause that only updates
