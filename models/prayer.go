@@ -75,3 +75,17 @@ type PrayerAccessCreate struct {
 	Access_Type    string `json:"accessType"`
 	Access_Type_ID int    `json:"accessTypeId"`
 }
+
+type PrayerComment struct {
+	Comment_ID      int       `json:"commentId" db:"comment_id" goqu:"skipinsert"`
+	Prayer_ID       int       `json:"prayerId" db:"prayer_id"`
+	User_Profile_ID int       `json:"userProfileId" db:"user_profile_id"`
+	Comment_Text    string    `json:"commentText" db:"comment_text"`
+	Is_Private      bool      `json:"isPrivate" db:"is_private"`
+	Is_Hidden       bool      `json:"isHidden" db:"is_hidden"`
+	Datetime_Create time.Time `json:"datetimeCreate" db:"datetime_create" goqu:"skipinsert"`
+	Datetime_Update time.Time `json:"datetimeUpdate" db:"datetime_update" goqu:"skipinsert"`
+	Created_By      int       `json:"createdBy" db:"created_by"`
+	Updated_By      int       `json:"updatedBy" db:"updated_by"`
+	Commenter_Name  string    `json:"commenterName" db:"commenter_name" goqu:"skipinsert"`
+}
