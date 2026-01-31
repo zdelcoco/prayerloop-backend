@@ -449,7 +449,7 @@ func UpdatePrayerSubject(c *gin.Context) {
 		if strings.TrimSpace(*updateData.Phone_Number) == "" {
 			updateRecord["phone_number"] = nil
 		} else {
-			updateRecord["phone_number"] = updateData.Phone_Number
+			updateRecord["phone_number"] = *updateData.Phone_Number
 		}
 	}
 
@@ -458,7 +458,7 @@ func UpdatePrayerSubject(c *gin.Context) {
 		if strings.TrimSpace(*updateData.Email) == "" {
 			updateRecord["email"] = nil
 		} else {
-			updateRecord["email"] = updateData.Email
+			updateRecord["email"] = *updateData.Email
 		}
 	}
 
