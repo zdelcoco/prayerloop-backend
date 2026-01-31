@@ -303,6 +303,8 @@ func CreatePrayerSubject(c *gin.Context) {
 		User_Profile_ID:             newSubject.User_Profile_ID,
 		Use_Linked_User_Photo:       useLinkedUserPhoto,
 		Link_Status:                 linkStatus,
+		Phone_Number:                newSubject.Phone_Number,
+		Email:                       newSubject.Email,
 		Created_By:                  userID,
 		Updated_By:                  userID,
 	}
@@ -436,6 +438,24 @@ func UpdatePrayerSubject(c *gin.Context) {
 		} else {
 			updateRecord["user_profile_id"] = nil
 			updateRecord["link_status"] = "unlinked"
+		}
+	}
+
+	if updateData.Phone_Number != nil {
+		// Empty string means clear the phone number
+		if strings.TrimSpace(*updateData.Phone_Number) == "" {
+			updateRecord["phone_number"] = nil
+		} else {
+			updateRecord["phone_number"] = updateData.Phone_Number
+		}
+	}
+
+	if updateData.Email != nil {
+		// Empty string means clear the email
+		if strings.TrimSpace(*updateData.Email) == "" {
+			updateRecord["email"] = nil
+		} else {
+			updateRecord["email"] = updateData.Email
 		}
 	}
 

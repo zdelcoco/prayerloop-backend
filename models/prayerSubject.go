@@ -12,6 +12,8 @@ type PrayerSubject struct {
 	User_Profile_ID             *int      `json:"userProfileId" db:"user_profile_id"`
 	Use_Linked_User_Photo       bool      `json:"useLinkedUserPhoto" db:"use_linked_user_photo"`
 	Link_Status                 string    `json:"linkStatus" db:"link_status"`
+	Phone_Number                *string   `json:"phoneNumber" db:"phone_number"`
+	Email                       *string   `json:"email" db:"email"`
 	Datetime_Create             time.Time `json:"datetimeCreate" db:"datetime_create" goqu:"skipinsert"`
 	Datetime_Update             time.Time `json:"datetimeUpdate" db:"datetime_update" goqu:"skipinsert"`
 	Created_By                  int       `json:"createdBy" db:"created_by"`
@@ -29,6 +31,8 @@ type PrayerSubjectWithPrayers struct {
 	User_Profile_ID             *int          `json:"userProfileId"`
 	Use_Linked_User_Photo       bool          `json:"useLinkedUserPhoto"`
 	Link_Status                 string        `json:"linkStatus"`
+	Phone_Number                *string       `json:"phoneNumber"`
+	Email                       *string       `json:"email"`
 	Datetime_Create             time.Time     `json:"datetimeCreate"`
 	Datetime_Update             time.Time     `json:"datetimeUpdate"`
 	Created_By                  int           `json:"createdBy"`
@@ -44,6 +48,8 @@ type PrayerSubjectCreate struct {
 	Photo_S3_Key                *string `json:"photoS3Key"`
 	User_Profile_ID             *int    `json:"userProfileId"`
 	Use_Linked_User_Photo       *bool   `json:"useLinkedUserPhoto"`
+	Phone_Number                *string `json:"phoneNumber"`
+	Email                       *string `json:"email"`
 }
 
 // PrayerSubjectUpdate is the input type for updating a prayer subject
@@ -54,6 +60,8 @@ type PrayerSubjectUpdate struct {
 	Photo_S3_Key                *string `json:"photoS3Key"`
 	Use_Linked_User_Photo       *bool   `json:"useLinkedUserPhoto"`
 	User_Profile_ID             *int    `json:"userProfileId"`
+	Phone_Number                *string `json:"phoneNumber"`
+	Email                       *string `json:"email"`
 }
 
 // PrayerSubjectMembership represents a member in a family/group prayer subject
