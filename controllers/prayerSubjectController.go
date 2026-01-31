@@ -991,10 +991,15 @@ func GetSubjectMembers(c *gin.Context) {
 			goqu.I("prayer_subject.prayer_subject_type").As("member_type"),
 			goqu.I("prayer_subject.photo_s3_key").As("member_photo_s3_key"),
 			goqu.I("prayer_subject.user_profile_id").As("member_user_profile_id"),
+			goqu.I("user_profile.phone_number").As("member_phone_number"),
 		).
 		Join(
 			goqu.T("prayer_subject"),
 			goqu.On(goqu.Ex{"prayer_subject_membership.member_prayer_subject_id": goqu.I("prayer_subject.prayer_subject_id")}),
+		).
+		LeftJoin(
+			goqu.T("user_profile"),
+			goqu.On(goqu.Ex{"prayer_subject.user_profile_id": goqu.I("user_profile.user_profile_id")}),
 		).
 		Where(goqu.C("group_prayer_subject_id").Eq(subjectID)).
 		Order(goqu.I("prayer_subject_membership.datetime_create").Asc()).

@@ -84,6 +84,7 @@ type PrayerSubjectMemberDetail struct {
 	Member_Type            string  `json:"memberType"`
 	Member_Photo_S3_Key    *string `json:"memberPhotoS3Key"`
 	Member_User_Profile_ID *int    `json:"memberUserProfileId"`
+	Member_Phone_Number    *string `json:"memberPhoneNumber"`
 }
 
 // ConnectionRequest represents a request to link a prayer subject to a user
