@@ -351,6 +351,17 @@ func NotifyCreatorOfSubjectEdit(
 // NotifyUsersOfNewComment notifies prayer creator, subject, and previous commenters of new comment.
 // Debounced with 15-minute window to prevent notification spam from rapid comments.
 func NotifyUsersOfNewComment(prayerID int, commentID int, commenterID int) {
+	// Get commenter name for notification message
+	var commenterName string
+	_, _ = initializers.DB.From("user_profile").
+		Select("first_name").
+		Where(goqu.C("user_profile_id").Eq(commenterID)).
+		ScanVal(&commenterName)
+
+	if commenterName == "" {
+		commenterName = "Someone"
+	}
+
 	// 1. Get prayer creator
 	var prayer models.Prayer
 	_, err := initializers.DB.From("prayer").
@@ -416,10 +427,12 @@ func NotifyUsersOfNewComment(prayerID int, commentID int, commenterID int) {
 			continue
 		}
 
+		notificationMessage := fmt.Sprintf("%s commented on a prayer", commenterName)
+
 		notification := models.Notification{
 			User_Profile_ID:      recipientID,
 			Notification_Type:    models.NotificationTypePrayerCommentAdded,
-			Notification_Message: "New comment on prayer",
+			Notification_Message: notificationMessage,
 			Notification_Status:  models.NotificationStatusUnread,
 			Target_Prayer_ID:     &prayerID,
 			Target_Comment_ID:    &commentID,
@@ -437,7 +450,7 @@ func NotifyUsersOfNewComment(prayerID int, commentID int, commenterID int) {
 			if pushService != nil {
 				payload := NotificationPayload{
 					Title: "New Comment",
-					Body:  notification.Notification_Message,
+					Body:  notificationMessage,
 					Data: map[string]string{
 						"type":      models.NotificationTypePrayerCommentAdded,
 						"prayerId":  strconv.Itoa(prayerID),
