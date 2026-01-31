@@ -51,6 +51,7 @@ func GetPrayer(c *gin.Context) {
 			goqu.I("prayer.updated_by"),
 			goqu.I("prayer.datetime_update"),
 			goqu.I("prayer.deleted"),
+			goqu.L("COALESCE(COUNT(DISTINCT prayer_comment.comment_id), 0)").As("comment_count"),
 		).
 		LeftJoin(goqu.T("prayer_access"), goqu.On(goqu.Ex{"prayer.prayer_id": goqu.I("prayer_access.prayer_id")})).
 		LeftJoin(goqu.T("user_group"), goqu.On(
@@ -59,7 +60,17 @@ func GetPrayer(c *gin.Context) {
 				goqu.Ex{"prayer_access.access_type": "user", "prayer_access.access_type_id": goqu.I("user_group.user_profile_id")},
 			),
 		)).
+		LeftJoin(
+			goqu.T("prayer_comment"),
+			goqu.On(
+				goqu.And(
+					goqu.I("prayer_comment.prayer_id").Eq(goqu.I("prayer.prayer_id")),
+					goqu.I("prayer_comment.is_hidden").Eq(false),
+				),
+			),
+		).
 		Where(goqu.And(goqu.I("prayer.prayer_id").Eq(prayerId))).
+		GroupBy("prayer.prayer_id", "prayer_access.access_type", "prayer_access.access_type_id", "user_group.user_profile_id").
 		Order(goqu.I("user_profile_id").Asc(), goqu.I("prayer_access.access_type").Asc())
 
 	sql, _, err := query.ToSQL()
@@ -129,6 +140,7 @@ func GetPrayers(c *gin.Context) {
 			goqu.I("prayer.updated_by"),
 			goqu.I("prayer.datetime_update"),
 			goqu.I("prayer.deleted"),
+			goqu.L("COALESCE(COUNT(DISTINCT prayer_comment.comment_id), 0)").As("comment_count"),
 		).
 		Join(
 			goqu.T("user_group"),
@@ -148,7 +160,17 @@ func GetPrayers(c *gin.Context) {
 				),
 			),
 		).
+		LeftJoin(
+			goqu.T("prayer_comment"),
+			goqu.On(
+				goqu.And(
+					goqu.I("prayer_comment.prayer_id").Eq(goqu.I("prayer.prayer_id")),
+					goqu.I("prayer_comment.is_hidden").Eq(false),
+				),
+			),
+		).
 		Where(goqu.Ex{"user_group.user_profile_id": user.User_Profile_ID}).
+		GroupBy("prayer.prayer_id", "prayer_access.access_type", "prayer_access.access_type_id", "user_group.user_profile_id").
 		Order(goqu.I("prayer.prayer_id").Asc()).
 		ScanStructsContext(c, &userPrayers)
 

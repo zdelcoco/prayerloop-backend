@@ -46,6 +46,7 @@ type UserPrayer struct {
 	Category_Name                  *string    `json:"categoryName,omitempty" db:"category_name" goqu:"skipinsert"`
 	Category_Color                 *string    `json:"categoryColor,omitempty" db:"category_color" goqu:"skipinsert"`
 	Category_Display_Seq           *int       `json:"categoryDisplaySequence,omitempty" db:"category_display_sequence" goqu:"skipinsert"`
+	Comment_Count                  int        `json:"commentCount" db:"comment_count" goqu:"skipinsert"`
 }
 
 type PrayerCreate struct {
