@@ -896,15 +896,18 @@ func UpdatePrayer(c *gin.Context) {
 		go func(creatorID int, pID int, subjectUID int) {
 			// Get subject's display name
 			var subjectName string
-			initializers.DB.From("user_profile").
+			_, nameErr := initializers.DB.From("user_profile").
 				Select("first_name").
 				Where(goqu.C("user_profile_id").Eq(subjectUID)).
-				ScanVal(&subjectName)
-			if subjectName == "" {
-				initializers.DB.From("user_profile").
+				Executor().ScanVal(&subjectName)
+			if nameErr != nil || subjectName == "" {
+				_, nameErr = initializers.DB.From("user_profile").
 					Select("username").
 					Where(goqu.C("user_profile_id").Eq(subjectUID)).
-					ScanVal(&subjectName)
+					Executor().ScanVal(&subjectName)
+				if nameErr != nil {
+					subjectName = "Someone" // Fallback if both queries fail
+				}
 			}
 			if subjectName == "" {
 				subjectName = "Someone"
