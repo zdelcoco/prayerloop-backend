@@ -347,3 +347,109 @@ func NotifyCreatorOfSubjectEdit(
 		log.Printf("Failed to send PRAYER_EDITED_BY_SUBJECT push notification: %v", err)
 	}
 }
+
+// NotifyUsersOfNewComment notifies prayer creator, subject, and previous commenters of new comment.
+// Debounced with 15-minute window to prevent notification spam from rapid comments.
+func NotifyUsersOfNewComment(prayerID int, commentID int, commenterID int) {
+	// 1. Get prayer creator
+	var prayer models.Prayer
+	_, err := initializers.DB.From("prayer").
+		Where(goqu.C("prayer_id").Eq(prayerID)).
+		ScanStruct(&prayer)
+	if err != nil {
+		log.Printf("Failed to fetch prayer for comment notification: %v", err)
+		return
+	}
+
+	recipientIDs := []int{}
+
+	// 2. Add creator if not the commenter
+	if prayer.Created_By != commenterID {
+		recipientIDs = append(recipientIDs, prayer.Created_By)
+	}
+
+	// 3. Add linked subject user if exists and not the commenter
+	if prayer.Prayer_Subject_ID != nil {
+		var subjectUserID *int
+		_, _ = initializers.DB.From("prayer_subject").
+			Select("user_profile_id").
+			Where(goqu.C("prayer_subject_id").Eq(*prayer.Prayer_Subject_ID)).
+			ScanVal(&subjectUserID)
+
+		if subjectUserID != nil && *subjectUserID != commenterID {
+			recipientIDs = append(recipientIDs, *subjectUserID)
+		}
+	}
+
+	// 4. Add previous commenters (excluding current commenter and already-added users)
+	var previousCommenters []int
+	_ = initializers.DB.From("prayer_comment").
+		Select(goqu.DISTINCT("user_profile_id")).
+		Where(
+			goqu.And(
+				goqu.C("prayer_id").Eq(prayerID),
+				goqu.C("comment_id").Neq(commentID), // Exclude this comment
+				goqu.C("user_profile_id").Neq(commenterID), // Exclude commenter
+			),
+		).
+		ScanVals(&previousCommenters)
+
+	// Deduplicate: only add if not already in recipientIDs
+	for _, prevCommenter := range previousCommenters {
+		alreadyAdded := false
+		for _, existing := range recipientIDs {
+			if existing == prevCommenter {
+				alreadyAdded = true
+				break
+			}
+		}
+		if !alreadyAdded {
+			recipientIDs = append(recipientIDs, prevCommenter)
+		}
+	}
+
+	// 5. For each recipient, check debounce and create notification
+	for _, recipientID := range recipientIDs {
+		// Check 15-minute debounce window
+		if !shouldSendDebounced(models.NotificationTypePrayerCommentAdded, recipientID, prayerID, 15) {
+			log.Printf("Debounced comment notification for user %d, prayer %d", recipientID, prayerID)
+			continue
+		}
+
+		notification := models.Notification{
+			User_Profile_ID:      recipientID,
+			Notification_Type:    models.NotificationTypePrayerCommentAdded,
+			Notification_Message: "New comment on prayer",
+			Notification_Status:  models.NotificationStatusUnread,
+			Target_Prayer_ID:     &prayerID,
+			Target_Comment_ID:    &commentID,
+			Created_By:           commenterID,
+			Updated_By:           commenterID,
+		}
+
+		insert := initializers.DB.Insert("notification").Rows(notification)
+		_, insertErr := insert.Executor().Exec()
+		if insertErr != nil {
+			log.Printf("Failed to create comment notification: %v", insertErr)
+		} else {
+			// Successfully created notification, send push
+			pushService := GetPushNotificationService()
+			if pushService != nil {
+				payload := NotificationPayload{
+					Title: "New Comment",
+					Body:  notification.Notification_Message,
+					Data: map[string]string{
+						"type":      models.NotificationTypePrayerCommentAdded,
+						"prayerId":  strconv.Itoa(prayerID),
+						"commentId": strconv.Itoa(commentID),
+					},
+				}
+
+				err = pushService.SendNotificationToUser(recipientID, payload)
+				if err != nil {
+					log.Printf("Failed to send comment push notification: %v", err)
+				}
+			}
+		}
+	}
+}
