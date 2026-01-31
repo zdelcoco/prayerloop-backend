@@ -130,7 +130,7 @@ func GetPrayerComments(c *gin.Context) {
 		)
 	}
 
-	var comments []models.PrayerComment
+	var comments []models.CommentWithUser
 	err = query.ScanStructs(&comments)
 	if err != nil {
 		log.Printf("Failed to fetch comments: %v", err)
@@ -140,7 +140,7 @@ func GetPrayerComments(c *gin.Context) {
 
 	// Return empty array if no comments found
 	if comments == nil {
-		comments = []models.PrayerComment{}
+		comments = []models.CommentWithUser{}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -228,7 +228,7 @@ func CreateComment(c *gin.Context) {
 	}
 
 	// Insert into prayer_comment table
-	commentInsert := models.PrayerComment{
+	commentInsert := models.Comment{
 		Prayer_ID:       prayerID,
 		User_Profile_ID: userID,
 		Comment_Text:    commentData.CommentText,
@@ -304,7 +304,7 @@ func UpdateComment(c *gin.Context) {
 	}
 
 	// Check if comment exists and user owns it
-	var existingComment models.PrayerComment
+	var existingComment models.Comment
 	commentFound, err := initializers.DB.From("prayer_comment").
 		Where(goqu.C("comment_id").Eq(commentID)).
 		ScanStruct(&existingComment)
@@ -343,7 +343,7 @@ func UpdateComment(c *gin.Context) {
 	}
 
 	// Fetch updated comment to return
-	var updatedComment models.PrayerComment
+	var updatedComment models.Comment
 	_, err = initializers.DB.From("prayer_comment").
 		Select(
 			"comment_id",
@@ -380,7 +380,7 @@ func DeleteComment(c *gin.Context) {
 	}
 
 	// Check if comment exists
-	var existingComment models.PrayerComment
+	var existingComment models.Comment
 	commentFound, err := initializers.DB.From("prayer_comment").
 		Where(goqu.C("comment_id").Eq(commentID)).
 		ScanStruct(&existingComment)
@@ -436,7 +436,7 @@ func HideComment(c *gin.Context) {
 	}
 
 	// Check if comment exists
-	var existingComment models.PrayerComment
+	var existingComment models.Comment
 	commentFound, err := initializers.DB.From("prayer_comment").
 		Where(goqu.C("comment_id").Eq(commentID)).
 		ScanStruct(&existingComment)
@@ -496,7 +496,7 @@ func ToggleCommentPrivacy(c *gin.Context) {
 	}
 
 	// Check if comment exists and user owns it
-	var existingComment models.PrayerComment
+	var existingComment models.Comment
 	commentFound, err := initializers.DB.From("prayer_comment").
 		Where(goqu.C("comment_id").Eq(commentID)).
 		ScanStruct(&existingComment)
