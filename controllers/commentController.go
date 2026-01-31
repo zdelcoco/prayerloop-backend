@@ -9,6 +9,7 @@ import (
 
 	"github.com/PrayerLoop/initializers"
 	"github.com/PrayerLoop/models"
+	"github.com/PrayerLoop/services"
 	"github.com/doug-martin/goqu/v9"
 )
 
@@ -261,6 +262,9 @@ func CreateComment(c *gin.Context) {
 		Select("first_name").
 		Where(goqu.C("user_profile_id").Eq(userID)).
 		ScanVal(&commenterName)
+
+	// Trigger notifications after successful comment creation
+	services.NotifyUsersOfNewComment(prayerID, insertedComment.Comment_ID, userID)
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "Comment created successfully",
