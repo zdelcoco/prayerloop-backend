@@ -380,6 +380,9 @@ func UpdatePrayerSubject(c *gin.Context) {
 		return
 	}
 
+	// DEBUG: Log received update data
+	log.Printf("UpdatePrayerSubject received data: %+v", updateData)
+
 	// Build update record
 	updateRecord := goqu.Record{
 		"updated_by":      currentUser.User_Profile_ID,
@@ -464,6 +467,9 @@ func UpdatePrayerSubject(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No valid fields provided for update"})
 		return
 	}
+
+	// DEBUG: Log updateRecord being sent to database
+	log.Printf("UpdatePrayerSubject updateRecord: %+v", updateRecord)
 
 	// Perform update
 	update := initializers.DB.Update("prayer_subject").
