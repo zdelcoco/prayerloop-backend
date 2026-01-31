@@ -211,6 +211,8 @@ func GetUserPrayerSubjects(c *gin.Context) {
 			User_Profile_ID:             subject.User_Profile_ID,
 			Use_Linked_User_Photo:       subject.Use_Linked_User_Photo,
 			Link_Status:                 subject.Link_Status,
+			Phone_Number:                subject.Phone_Number,
+			Email:                       subject.Email,
 			Datetime_Create:             subject.Datetime_Create,
 			Datetime_Update:             subject.Datetime_Update,
 			Created_By:                  subject.Created_By,
