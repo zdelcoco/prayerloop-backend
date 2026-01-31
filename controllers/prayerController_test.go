@@ -611,14 +611,17 @@ func TestRemovePrayerAccess(t *testing.T) {
 // Test UpdatePrayer - Update a prayer with partial field updates
 func TestUpdatePrayer(t *testing.T) {
 	tests := []struct {
-		name           string
-		prayerID       string
-		currentUser    models.UserProfile
-		updateData     models.PrayerCreate
-		prayerExists   bool
-		isCreator      bool
-		expectedStatus int
-		expectError    bool
+		name             string
+		prayerID         string
+		currentUser      models.UserProfile
+		updateData       models.PrayerCreate
+		prayerExists     bool
+		isCreator        bool
+		prayerSubjectID  *int  // Subject ID on the prayer (nil = no subject)
+		subjectUserID    *int  // User linked to subject (nil = not linked to current user)
+		subjectLinkStatus string // "linked", "pending", "unlinked", or ""
+		expectedStatus   int
+		expectError      bool
 	}{
 		{
 			name:        "successful update",
@@ -666,6 +669,68 @@ func TestUpdatePrayer(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 			expectError:    true,
 		},
+		// Subject authorization test cases
+		{
+			name:        "successful update - linked subject can edit",
+			prayerID:    "1",
+			currentUser: MockUser(), // User_Profile_ID = 1
+			updateData: models.PrayerCreate{
+				Prayer_Description: "Subject updated description",
+			},
+			prayerExists:      true,
+			isCreator:         false, // creatorID = 2 (not current user)
+			prayerSubjectID:   IntPtr(1),
+			subjectUserID:     IntPtr(1), // Linked to current user
+			subjectLinkStatus: "linked",
+			expectedStatus:    http.StatusOK,
+			expectError:       false,
+		},
+		{
+			name:        "unauthorized - pending link cannot edit",
+			prayerID:    "1",
+			currentUser: MockUser(),
+			updateData: models.PrayerCreate{
+				Prayer_Description: "Subject updated description",
+			},
+			prayerExists:      true,
+			isCreator:         false,
+			prayerSubjectID:   IntPtr(1),
+			subjectUserID:     IntPtr(1),
+			subjectLinkStatus: "pending",
+			expectedStatus:    http.StatusUnauthorized,
+			expectError:       true,
+		},
+		{
+			name:        "unauthorized - unlinked subject cannot edit",
+			prayerID:    "1",
+			currentUser: MockUser(),
+			updateData: models.PrayerCreate{
+				Prayer_Description: "Subject updated description",
+			},
+			prayerExists:      true,
+			isCreator:         false,
+			prayerSubjectID:   IntPtr(1),
+			subjectUserID:     IntPtr(1),
+			subjectLinkStatus: "unlinked",
+			expectedStatus:    http.StatusUnauthorized,
+			expectError:       true,
+		},
+		{
+			name:        "forbidden - subject cannot change prayer_subject_id",
+			prayerID:    "1",
+			currentUser: MockUser(),
+			updateData: models.PrayerCreate{
+				Prayer_Description: "Subject updated description",
+				Prayer_Subject_ID:  IntPtr(99), // Attempting to change subject
+			},
+			prayerExists:      true,
+			isCreator:         false,
+			prayerSubjectID:   IntPtr(1),
+			subjectUserID:     IntPtr(1),
+			subjectLinkStatus: "linked",
+			expectedStatus:    http.StatusForbidden,
+			expectError:       true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -686,11 +751,22 @@ func TestUpdatePrayer(t *testing.T) {
 						"prayer_id", "prayer_type", "is_private", "title", "prayer_description",
 						"is_answered", "prayer_priority", "datetime_answered", "created_by",
 						"datetime_create", "updated_by", "datetime_update", "deleted",
-					}).AddRow(1, "personal", false, "Original prayer title", "Original prayer description", false, 1, nil, creatorID, now, creatorID, now, false)
+						"prayer_subject_id", "subject_display_sequence",
+					}).AddRow(1, "personal", false, "Original prayer title", "Original prayer description", false, 1, nil, creatorID, now, creatorID, now, false, tt.prayerSubjectID, 0)
 					mock.ExpectQuery("SELECT").WillReturnRows(prayerRows)
 
-					if tt.isCreator {
-						// Mock update
+					// If not creator and has subject, mock subject lookup
+					if !tt.isCreator && tt.prayerSubjectID != nil {
+						subjectRows := sqlmock.NewRows([]string{
+							"prayer_subject_id", "user_profile_id", "link_status",
+						}).AddRow(*tt.prayerSubjectID, tt.subjectUserID, tt.subjectLinkStatus)
+						mock.ExpectQuery("SELECT .* FROM \"prayer_subject\"").WillReturnRows(subjectRows)
+					}
+
+					// Mock update if authorized (creator OR linked subject without forbidden action)
+					isLinkedSubject := tt.subjectLinkStatus == "linked" && tt.subjectUserID != nil && *tt.subjectUserID == 1
+					isForbidden := tt.expectedStatus == http.StatusForbidden
+					if tt.isCreator || (isLinkedSubject && !isForbidden) {
 						mock.ExpectExec("UPDATE \"prayer\"").
 							WillReturnResult(sqlmock.NewResult(0, 1))
 					}
@@ -700,6 +776,7 @@ func TestUpdatePrayer(t *testing.T) {
 						"prayer_id", "prayer_type", "is_private", "title", "prayer_description",
 						"is_answered", "prayer_priority", "datetime_answered", "created_by",
 						"datetime_create", "updated_by", "datetime_update", "deleted",
+						"prayer_subject_id", "subject_display_sequence",
 					}))
 				}
 			}
@@ -731,64 +808,94 @@ func TestUpdatePrayer(t *testing.T) {
 // Test DeletePrayer - Soft delete a prayer
 func TestDeletePrayer(t *testing.T) {
 	tests := []struct {
-		name            string
-		prayerID        string
-		currentUser     models.UserProfile
-		prayerExists    bool
-		isCreator       bool
-		hasAccessRecords bool
-		expectedStatus  int
-		expectError     bool
+		name              string
+		prayerID          string
+		currentUser       models.UserProfile
+		prayerExists      bool
+		isCreator         bool
+		hasAccessRecords  bool
+		prayerSubjectID   *int   // Subject ID on the prayer (nil = no subject)
+		subjectUserID     *int   // User linked to subject (nil = not linked to current user)
+		subjectLinkStatus string // "linked", "pending", "unlinked", or ""
+		expectedStatus    int
+		expectError       bool
 	}{
 		{
-			name:            "successful deletion",
-			prayerID:        "1",
-			currentUser:     MockUser(),
-			prayerExists:    true,
-			isCreator:       true,
+			name:             "successful deletion",
+			prayerID:         "1",
+			currentUser:      MockUser(),
+			prayerExists:     true,
+			isCreator:        true,
 			hasAccessRecords: false,
-			expectedStatus:  http.StatusOK,
-			expectError:     false,
+			expectedStatus:   http.StatusOK,
+			expectError:      false,
 		},
 		{
-			name:            "conflict - access records exist",
-			prayerID:        "1",
-			currentUser:     MockUser(),
-			prayerExists:    true,
-			isCreator:       true,
+			name:             "conflict - access records exist",
+			prayerID:         "1",
+			currentUser:      MockUser(),
+			prayerExists:     true,
+			isCreator:        true,
 			hasAccessRecords: true,
-			expectedStatus:  http.StatusConflict,
-			expectError:     true,
+			expectedStatus:   http.StatusConflict,
+			expectError:      true,
 		},
 		{
-			name:            "unauthorized - not prayer creator",
-			prayerID:        "1",
-			currentUser:     MockUser(),
-			prayerExists:    true,
-			isCreator:       false,
+			name:             "unauthorized - not prayer creator",
+			prayerID:         "1",
+			currentUser:      MockUser(),
+			prayerExists:     true,
+			isCreator:        false,
 			hasAccessRecords: false,
-			expectedStatus:  http.StatusUnauthorized,
-			expectError:     true,
+			expectedStatus:   http.StatusUnauthorized,
+			expectError:      true,
 		},
 		{
-			name:            "prayer not found",
-			prayerID:        "999",
-			currentUser:     MockUser(),
-			prayerExists:    false,
-			isCreator:       false,
+			name:             "prayer not found",
+			prayerID:         "999",
+			currentUser:      MockUser(),
+			prayerExists:     false,
+			isCreator:        false,
 			hasAccessRecords: false,
-			expectedStatus:  http.StatusNotFound,
-			expectError:     true,
+			expectedStatus:   http.StatusNotFound,
+			expectError:      true,
 		},
 		{
-			name:            "invalid prayer ID",
-			prayerID:        "invalid",
-			currentUser:     MockUser(),
-			prayerExists:    false,
-			isCreator:       false,
+			name:             "invalid prayer ID",
+			prayerID:         "invalid",
+			currentUser:      MockUser(),
+			prayerExists:     false,
+			isCreator:        false,
 			hasAccessRecords: false,
-			expectedStatus:  http.StatusBadRequest,
-			expectError:     true,
+			expectedStatus:   http.StatusBadRequest,
+			expectError:      true,
+		},
+		// Subject authorization test cases
+		{
+			name:              "successful deletion - linked subject can delete",
+			prayerID:          "1",
+			currentUser:       MockUser(), // User_Profile_ID = 1
+			prayerExists:      true,
+			isCreator:         false, // creatorID = 2 (not current user)
+			hasAccessRecords:  false,
+			prayerSubjectID:   IntPtr(1),
+			subjectUserID:     IntPtr(1), // Linked to current user
+			subjectLinkStatus: "linked",
+			expectedStatus:    http.StatusOK,
+			expectError:       false,
+		},
+		{
+			name:              "unauthorized - pending link cannot delete",
+			prayerID:          "1",
+			currentUser:       MockUser(),
+			prayerExists:      true,
+			isCreator:         false,
+			hasAccessRecords:  false,
+			prayerSubjectID:   IntPtr(1),
+			subjectUserID:     IntPtr(1),
+			subjectLinkStatus: "pending",
+			expectedStatus:    http.StatusUnauthorized,
+			expectError:       true,
 		},
 	}
 
@@ -810,10 +917,23 @@ func TestDeletePrayer(t *testing.T) {
 						"prayer_id", "prayer_type", "is_private", "title", "prayer_description",
 						"is_answered", "prayer_priority", "datetime_answered", "created_by",
 						"datetime_create", "updated_by", "datetime_update", "deleted",
-					}).AddRow(1, "personal", false, "Test Prayer", "Please pray for this", false, 1, nil, creatorID, now, creatorID, now, false)
+						"prayer_subject_id", "subject_display_sequence",
+					}).AddRow(1, "personal", false, "Test Prayer", "Please pray for this", false, 1, nil, creatorID, now, creatorID, now, false, tt.prayerSubjectID, 0)
 					mock.ExpectQuery("SELECT").WillReturnRows(prayerRows)
 
-					if tt.isCreator {
+					// If not creator and has subject, mock subject lookup
+					if !tt.isCreator && tt.prayerSubjectID != nil {
+						subjectRows := sqlmock.NewRows([]string{
+							"prayer_subject_id", "user_profile_id", "link_status",
+						}).AddRow(*tt.prayerSubjectID, tt.subjectUserID, tt.subjectLinkStatus)
+						mock.ExpectQuery("SELECT .* FROM \"prayer_subject\"").WillReturnRows(subjectRows)
+					}
+
+					// Determine if user is authorized (creator OR linked subject)
+					isLinkedSubject := tt.subjectLinkStatus == "linked" && tt.subjectUserID != nil && *tt.subjectUserID == 1
+					isAuthorized := tt.isCreator || isLinkedSubject
+
+					if isAuthorized {
 						// Mock access records check
 						if tt.hasAccessRecords {
 							accessRows := sqlmock.NewRows([]string{"count"}).AddRow(2)
@@ -832,6 +952,7 @@ func TestDeletePrayer(t *testing.T) {
 						"prayer_id", "prayer_type", "is_private", "title", "prayer_description",
 						"is_answered", "prayer_priority", "datetime_answered", "created_by",
 						"datetime_create", "updated_by", "datetime_update", "deleted",
+						"prayer_subject_id", "subject_display_sequence",
 					}))
 				}
 			}

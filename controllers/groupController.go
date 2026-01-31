@@ -636,10 +636,11 @@ func GetGroupPrayers(c *gin.Context) {
 			goqu.I("prayer.prayer_subject_id"),
 			goqu.I("prayer_subject.prayer_subject_display_name"),
 			goqu.I("prayer_subject.user_profile_id").As("prayer_subject_user_profile_id"),
+			goqu.I("prayer_subject.link_status"),
 			goqu.I("prayer_category.prayer_category_id"),
 			goqu.I("prayer_category.category_name"),
 			goqu.I("prayer_category.category_color"),
-			goqu.I("prayer_category.display_sequence").As("category_display_seq"),
+			goqu.I("prayer_category.display_sequence").As("category_display_sequence"),
 		).
 		Join(
 			goqu.T("prayer_access"),
@@ -829,50 +830,62 @@ func CreateGroupPrayer(c *gin.Context) {
 		return
 	}
 
-	// Send push notification to other group members
-	go func() {
-		groupName, err := GetGroupNameByID(groupID)
+	// Get group name for notification
+	groupName, err := GetGroupNameByID(groupID)
+	if err != nil {
+		log.Printf("Failed to get group name for notification: %v", err)
+		groupName = "a circle" // Fallback
+	}
+
+	// Get display name for actor
+	displayName := currentUser.First_Name
+	if displayName == "" {
+		displayName = currentUser.Username
+	}
+
+	// Get linked subject user ID if prayer has a linked subject
+	var linkedSubjectUserID *int
+	if newPrayer.Prayer_Subject_ID != nil {
+		var subjectUserID int
+		found, _ := initializers.DB.From("prayer_subject").
+			Select("user_profile_id").
+			Where(
+				goqu.And(
+					goqu.C("prayer_subject_id").Eq(*newPrayer.Prayer_Subject_ID),
+					goqu.C("link_status").Eq("linked"),
+					goqu.C("user_profile_id").IsNotNull(),
+				),
+			).ScanVal(&subjectUserID)
+		if found {
+			linkedSubjectUserID = &subjectUserID
+		}
+	}
+
+	// Send notifications to circle members (async)
+	go func(gID int, gName string, actorID int, actorName string, pID int, creatorID int, subjectID *int) {
+		services.NotifyCircleOfPrayerShared(gID, gName, actorID, actorName, pID, creatorID, subjectID)
+	}(groupID, groupName, currentUser.User_Profile_ID, displayName, insertedPrayerID, currentUser.User_Profile_ID, linkedSubjectUserID)
+
+	// Send PRAYER_CREATED_FOR_YOU notification to linked subject (async)
+	if linkedSubjectUserID != nil && *linkedSubjectUserID != currentUser.User_Profile_ID {
+		go func(subjectID int, pID int, gID int, actorID int, actorName string, gName string) {
+			services.NotifySubjectOfPrayerCreated(subjectID, pID, gID, actorID, actorName, gName)
+		}(*linkedSubjectUserID, insertedPrayerID, groupID, currentUser.User_Profile_ID, displayName, groupName)
+	}
+
+	// Log prayer creation to history (async, non-blocking)
+	go func(prayerID int, userID int) {
+		historyEntry := models.PrayerEditHistory{
+			Prayer_ID:       prayerID,
+			User_Profile_ID: userID,
+			Action_Type:     models.HistoryActionCreated,
+		}
+		insert := initializers.DB.Insert("prayer_edit_history").Rows(historyEntry)
+		_, err := insert.Executor().Exec()
 		if err != nil {
-			log.Printf("Failed to get group name for notification: %v", err)
-			return
+			log.Printf("Failed to log prayer creation to history: %v", err)
 		}
-
-		memberIDs, err := GetOtherGroupMemberIDs(groupID, currentUser.User_Profile_ID)
-		if err != nil {
-			log.Printf("Failed to get group member IDs for notification: %v", err)
-			return
-		}
-
-		if len(memberIDs) == 0 {
-			return
-		}
-
-		pushService := services.GetPushNotificationService()
-		if pushService == nil {
-			log.Println("Push notification service not available")
-			return
-		}
-
-		displayName := currentUser.First_Name
-		if displayName == "" {
-			displayName = currentUser.Username
-		}
-
-		payload := services.NotificationPayload{
-			Title: groupName,
-			Body:  fmt.Sprintf("%s added a new prayer", displayName),
-			Data: map[string]string{
-				"type":     "group_prayer_added",
-				"groupId":  strconv.Itoa(groupID),
-				"prayerId": strconv.Itoa(insertedPrayerID),
-			},
-		}
-
-		err = pushService.SendNotificationToUsers(memberIDs, payload)
-		if err != nil {
-			log.Printf("Failed to send group prayer notifications: %v", err)
-		}
-	}()
+	}(insertedPrayerID, currentUser.User_Profile_ID)
 
 	c.JSON(http.StatusCreated, gin.H{"message": "Prayer created sucessfully!",
 		"prayerId":       insertedPrayerID,

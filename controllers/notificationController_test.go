@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -365,6 +366,254 @@ func TestSendPushNotification(t *testing.T) {
 			} else {
 				assert.NotNil(t, response["message"])
 				assert.NotNil(t, response["userIds"])
+			}
+		})
+	}
+}
+
+// Test DeleteUserNotification - Delete a notification
+func TestDeleteUserNotification(t *testing.T) {
+	tests := []struct {
+		name                  string
+		userID                string
+		notificationID        string
+		currentUser           models.UserProfile
+		isAdmin               bool
+		notificationExists    bool
+		notificationBelongsToUser bool
+		expectedStatus        int
+		expectError           bool
+	}{
+		{
+			name:                  "successful delete - own notification",
+			userID:                "1",
+			notificationID:        "1",
+			currentUser:           MockUser(),
+			isAdmin:               false,
+			notificationExists:    true,
+			notificationBelongsToUser: true,
+			expectedStatus:        http.StatusOK,
+			expectError:           false,
+		},
+		{
+			name:                  "successful delete - admin deletes other user's notification",
+			userID:                "2",
+			notificationID:        "1",
+			currentUser:           MockAdminUser(),
+			isAdmin:               true,
+			notificationExists:    true,
+			notificationBelongsToUser: true,
+			expectedStatus:        http.StatusOK,
+			expectError:           false,
+		},
+		{
+			name:                  "notification not found",
+			userID:                "1",
+			notificationID:        "999",
+			currentUser:           MockUser(),
+			isAdmin:               false,
+			notificationExists:    false,
+			notificationBelongsToUser: false,
+			expectedStatus:        http.StatusNotFound,
+			expectError:           true,
+		},
+		{
+			name:                  "notification belongs to different user",
+			userID:                "1",
+			notificationID:        "1",
+			currentUser:           MockUser(),
+			isAdmin:               false,
+			notificationExists:    true,
+			notificationBelongsToUser: false,
+			expectedStatus:        http.StatusForbidden,
+			expectError:           true,
+		},
+		{
+			name:                  "forbidden - delete other user's notification",
+			userID:                "2",
+			notificationID:        "1",
+			currentUser:           MockUser(),
+			isAdmin:               false,
+			notificationExists:    false,
+			notificationBelongsToUser: false,
+			expectedStatus:        http.StatusForbidden,
+			expectError:           true,
+		},
+		{
+			name:                  "invalid user ID",
+			userID:                "invalid",
+			notificationID:        "1",
+			currentUser:           MockUser(),
+			isAdmin:               false,
+			notificationExists:    false,
+			notificationBelongsToUser: false,
+			expectedStatus:        http.StatusBadRequest,
+			expectError:           true,
+		},
+		{
+			name:                  "invalid notification ID",
+			userID:                "1",
+			notificationID:        "invalid",
+			currentUser:           MockUser(),
+			isAdmin:               false,
+			notificationExists:    false,
+			notificationBelongsToUser: false,
+			expectedStatus:        http.StatusBadRequest,
+			expectError:           true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, mock, cleanup := SetupTestDB(t)
+			defer cleanup()
+
+			// Only mock database operations for valid IDs and authorized users
+			if tt.userID != "invalid" && tt.notificationID != "invalid" {
+				// Only set up mocks if user has permission to attempt the operation
+				if tt.currentUser.User_Profile_ID == 1 || tt.isAdmin {
+					if tt.notificationExists {
+						// Mock notification ownership check
+						// Parse userID to determine which user the notification belongs to
+						userIDInt := 1
+						if tt.userID == "2" {
+							userIDInt = 2
+						}
+
+						userIDToReturn := userIDInt
+						if !tt.notificationBelongsToUser {
+							userIDToReturn = 999 // Different user
+						}
+						ownershipRows := sqlmock.NewRows([]string{"user_profile_id"}).AddRow(userIDToReturn)
+						mock.ExpectQuery("SELECT").WillReturnRows(ownershipRows)
+
+						if tt.notificationBelongsToUser {
+							// Mock delete
+							mock.ExpectExec("DELETE FROM \"notification\"").
+								WillReturnResult(sqlmock.NewResult(0, 1))
+						}
+					} else {
+						// Mock ownership check (not found) - return error to simulate no rows found
+						mock.ExpectQuery("SELECT").WillReturnError(sql.ErrNoRows)
+					}
+				}
+			}
+
+			c, w := SetupTestContext()
+			SetAuthenticatedUser(c, tt.currentUser, tt.isAdmin)
+			c.Params = []gin.Param{
+				{Key: "user_profile_id", Value: tt.userID},
+				{Key: "notification_id", Value: tt.notificationID},
+			}
+			c.Request = httptest.NewRequest("DELETE", "/users/"+tt.userID+"/notifications/"+tt.notificationID, nil)
+
+			DeleteUserNotification(c)
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			var response map[string]interface{}
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
+
+			if tt.expectError {
+				assert.NotNil(t, response["error"])
+			} else {
+				assert.NotNil(t, response["message"])
+				assert.Contains(t, response["message"], "deleted successfully")
+			}
+		})
+	}
+}
+
+// Test MarkAllNotificationsAsRead - Mark all unread notifications as read
+func TestMarkAllNotificationsAsRead(t *testing.T) {
+	tests := []struct {
+		name           string
+		userID         string
+		currentUser    models.UserProfile
+		isAdmin        bool
+		unreadCount    int64
+		expectedStatus int
+		expectError    bool
+	}{
+		{
+			name:           "successful mark all as read - own notifications",
+			userID:         "1",
+			currentUser:    MockUser(),
+			isAdmin:        false,
+			unreadCount:    5,
+			expectedStatus: http.StatusOK,
+			expectError:    false,
+		},
+		{
+			name:           "successful mark all as read - admin for other user",
+			userID:         "2",
+			currentUser:    MockAdminUser(),
+			isAdmin:        true,
+			unreadCount:    3,
+			expectedStatus: http.StatusOK,
+			expectError:    false,
+		},
+		{
+			name:           "no unread notifications",
+			userID:         "1",
+			currentUser:    MockUser(),
+			isAdmin:        false,
+			unreadCount:    0,
+			expectedStatus: http.StatusOK,
+			expectError:    false,
+		},
+		{
+			name:           "forbidden - mark all for other user",
+			userID:         "2",
+			currentUser:    MockUser(),
+			isAdmin:        false,
+			unreadCount:    0,
+			expectedStatus: http.StatusForbidden,
+			expectError:    true,
+		},
+		{
+			name:           "invalid user ID",
+			userID:         "invalid",
+			currentUser:    MockUser(),
+			isAdmin:        false,
+			unreadCount:    0,
+			expectedStatus: http.StatusBadRequest,
+			expectError:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, mock, cleanup := SetupTestDB(t)
+			defer cleanup()
+
+			// Only mock database operations for valid IDs and authorized users
+			if tt.userID != "invalid" && (tt.currentUser.User_Profile_ID == 1 || tt.isAdmin) {
+				// Mock update
+				mock.ExpectExec("UPDATE \"notification\"").
+					WillReturnResult(sqlmock.NewResult(0, tt.unreadCount))
+			}
+
+			c, w := SetupTestContext()
+			SetAuthenticatedUser(c, tt.currentUser, tt.isAdmin)
+			c.Params = []gin.Param{
+				{Key: "user_profile_id", Value: tt.userID},
+			}
+			c.Request = httptest.NewRequest("PATCH", "/users/"+tt.userID+"/notifications/mark-all-read", nil)
+
+			MarkAllNotificationsAsRead(c)
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
+
+			var response map[string]interface{}
+			_ = json.Unmarshal(w.Body.Bytes(), &response)
+
+			if tt.expectError {
+				assert.NotNil(t, response["error"])
+			} else {
+				assert.NotNil(t, response["message"])
+				assert.Contains(t, response["message"], "marked as read")
+				assert.Equal(t, float64(tt.unreadCount), response["updatedCount"])
 			}
 		})
 	}

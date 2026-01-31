@@ -170,7 +170,7 @@ func JoinGroup(c *gin.Context) {
 		return
 	}
 
-	// Send push notification to other group members
+	// Send push notification and create notification records for other group members
 	go func() {
 		groupName, err := GetGroupNameByID(groupID)
 		if err != nil {
@@ -188,20 +188,41 @@ func JoinGroup(c *gin.Context) {
 			return
 		}
 
+		displayName := currentUser.First_Name
+		if displayName == "" {
+			displayName = currentUser.Username
+		}
+
+		notificationMessage := fmt.Sprintf("%s has joined %s", displayName, groupName)
+
+		// Create notification records in database for each group member
+		for _, memberID := range memberIDs {
+			notification := models.Notification{
+				User_Profile_ID:      memberID,
+				Notification_Type:    models.NotificationTypeGroupMemberJoined,
+				Notification_Message: notificationMessage,
+				Notification_Status:  models.NotificationStatusUnread,
+				Created_By:           currentUser.User_Profile_ID,
+				Updated_By:           currentUser.User_Profile_ID,
+			}
+
+			insert := initializers.DB.Insert("notification").Rows(notification)
+			_, err := insert.Executor().Exec()
+			if err != nil {
+				log.Printf("Failed to create notification record for user %d: %v", memberID, err)
+			}
+		}
+
+		// Send push notification
 		pushService := services.GetPushNotificationService()
 		if pushService == nil {
 			log.Println("Push notification service not available")
 			return
 		}
 
-		displayName := currentUser.First_Name
-		if displayName == "" {
-			displayName = currentUser.Username
-		}
-
 		payload := services.NotificationPayload{
 			Title: groupName,
-			Body:  fmt.Sprintf("%s has joined the group", displayName),
+			Body:  notificationMessage,
 			Data: map[string]string{
 				"type":    "group_member_joined",
 				"groupId": strconv.Itoa(groupID),

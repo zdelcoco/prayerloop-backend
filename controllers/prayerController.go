@@ -12,6 +12,7 @@ import (
 
 	"github.com/PrayerLoop/initializers"
 	"github.com/PrayerLoop/models"
+	"github.com/PrayerLoop/services"
 	"github.com/doug-martin/goqu/v9"
 )
 
@@ -292,16 +293,30 @@ func AddPrayerAccess(c *gin.Context) {
 		// For 'subject' access type, user just needs to be able to view the prayer (accessFound)
 		// For 'user' and 'group' access types, user must be the prayer creator
 		if !admin {
-			if newPrayerAccess.Access_Type == "subject" {
-				// For subject access, user just needs view access to the prayer
-				if !accessFound {
-					c.JSON(http.StatusUnauthorized, gin.H{"error": "You don't have access to this prayer"})
+			// User needs view access to the prayer to share it
+			if !accessFound {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "You don't have access to this prayer"})
+				return
+			}
+
+			// For group sharing, verify user is a member of the target group
+			if newPrayerAccess.Access_Type == "group" {
+				var count int64
+				found, err := initializers.DB.From("user_group").
+					Select(goqu.COUNT("*")).
+					Where(
+						goqu.C("group_profile_id").Eq(newPrayerAccess.Access_Type_ID),
+						goqu.C("user_profile_id").Eq(userID),
+					).
+					ScanVal(&count)
+
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify group membership", "details": err.Error()})
 					return
 				}
-			} else {
-				// For user/group access, user must be the prayer creator
-				if prayerAccess.Created_By != userID {
-					c.JSON(http.StatusUnauthorized, gin.H{"error": "You are not authorized to grant access to this prayer"})
+
+				if !found || count == 0 {
+					c.JSON(http.StatusUnauthorized, gin.H{"error": "You must be a member of the prayer circle to share this prayer with it"})
 					return
 				}
 			}
@@ -325,6 +340,120 @@ func AddPrayerAccess(c *gin.Context) {
 				log.Println(err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add prayer access record", "details": err.Error()})
 				return
+			}
+
+			// Log prayer share to history (async, non-blocking) - only for group shares
+			if newPrayerAccess.Access_Type == "group" {
+				go func(prayerID int, uid int) {
+					historyEntry := models.PrayerEditHistory{
+						Prayer_ID:       prayerID,
+						User_Profile_ID: uid,
+						Action_Type:     models.HistoryActionShared,
+					}
+					insertHistory := initializers.DB.Insert("prayer_edit_history").Rows(historyEntry)
+					_, err := insertHistory.Executor().Exec()
+					if err != nil {
+						log.Printf("Failed to log prayer share to history: %v", err)
+					}
+				}(prayerId, userID)
+			}
+
+			// Send circle notification for group shares (async)
+			if newPrayerAccess.Access_Type == "group" {
+				go func(groupID int, actorID int, prayerID int, creatorID int) {
+					// Get group name
+					groupName, err := GetGroupNameByID(groupID)
+					if err != nil {
+						log.Printf("Failed to get group name for notification: %v", err)
+						return
+					}
+
+					// Get actor display name
+					var actorName string
+					_, nameErr := initializers.DB.From("user_profile").
+						Select("first_name").
+						Where(goqu.C("user_profile_id").Eq(actorID)).
+						Executor().ScanVal(&actorName)
+					if nameErr != nil || actorName == "" {
+						_, nameErr = initializers.DB.From("user_profile").
+							Select("username").
+							Where(goqu.C("user_profile_id").Eq(actorID)).
+							Executor().ScanVal(&actorName)
+						if nameErr != nil {
+							actorName = "Someone" // Fallback if both queries fail
+						}
+					}
+
+					// Get linked subject if prayer has one
+					var linkedSubjectUserID *int
+					if existingPrayer.Prayer_Subject_ID != nil {
+						var subjectUserID int
+						found, _ := initializers.DB.From("prayer_subject").
+							Select("user_profile_id").
+							Where(
+								goqu.And(
+									goqu.C("prayer_subject_id").Eq(*existingPrayer.Prayer_Subject_ID),
+									goqu.C("link_status").Eq("linked"),
+									goqu.C("user_profile_id").IsNotNull(),
+								),
+							).ScanVal(&subjectUserID)
+						if found {
+							linkedSubjectUserID = &subjectUserID
+						}
+					}
+
+					services.NotifyCircleOfPrayerShared(groupID, groupName, actorID, actorName, prayerID, creatorID, linkedSubjectUserID)
+				}(newPrayerAccess.Access_Type_ID, userID, prayerId, existingPrayer.Created_By)
+			}
+
+			// Send PRAYER_CREATED_FOR_YOU notification to linked subject (async)
+			if newPrayerAccess.Access_Type == "group" && existingPrayer.Prayer_Subject_ID != nil {
+				go func(subjectPrayerID int, existingPrayerSubjectID int, actorID int, groupID int) {
+					// Check if prayer has a linked subject
+					var subjectUserID int
+					found, err := initializers.DB.From("prayer_subject").
+						Select("user_profile_id").
+						Where(
+							goqu.And(
+								goqu.C("prayer_subject_id").Eq(existingPrayerSubjectID),
+								goqu.C("link_status").Eq("linked"),
+								goqu.C("user_profile_id").IsNotNull(),
+							),
+						).ScanVal(&subjectUserID)
+
+					if err != nil || !found {
+						return // No linked subject
+					}
+
+					// Don't notify if subject is the actor (sharing prayer about themselves)
+					if subjectUserID == actorID {
+						return
+					}
+
+					// Get actor display name
+					var actorName string
+					_, nameErr := initializers.DB.From("user_profile").
+						Select("first_name").
+						Where(goqu.C("user_profile_id").Eq(actorID)).
+						Executor().ScanVal(&actorName)
+					if nameErr != nil || actorName == "" {
+						_, nameErr = initializers.DB.From("user_profile").
+							Select("username").
+							Where(goqu.C("user_profile_id").Eq(actorID)).
+							Executor().ScanVal(&actorName)
+						if nameErr != nil {
+							actorName = "Someone" // Fallback if both queries fail
+						}
+					}
+
+					// Get group name
+					groupName, err := GetGroupNameByID(groupID)
+					if err != nil {
+						groupName = "a circle"
+					}
+
+					services.NotifySubjectOfPrayerCreated(subjectUserID, subjectPrayerID, groupID, actorID, actorName, groupName)
+				}(prayerId, *existingPrayer.Prayer_Subject_ID, userID, newPrayerAccess.Access_Type_ID)
 			}
 
 			c.JSON(http.StatusOK, gin.H{"message": "Prayer access added successfully"})
@@ -392,6 +521,12 @@ func RemovePrayerAccess(c *gin.Context) {
 		return
 	}
 
+	// Track if linked subject is removing from group (for notification)
+	var linkedSubjectRemoving bool
+	var linkedSubjectName string
+	var groupNameForNotification string
+	var groupIDForNotification int
+
 	if existingPrayerAccess.Access_Type == "group" {
 		var group models.GroupProfile
 		groupFound, err := initializers.DB.From("group_profile").
@@ -424,16 +559,88 @@ func RemovePrayerAccess(c *gin.Context) {
 			return
 		}
 
-		// allow deletion if user is admin, or if user is creator of the prayer, or if user is creator of the group
-		if !admin && (group.Created_By != userID || existingPrayer.Created_By != userID) {
+		// Allow deletion if user is admin, prayer creator, or group creator
+		canDelete := admin || existingPrayer.Created_By == userID || group.Created_By == userID
+		log.Printf("[RemovePrayerAccess] Group access removal - userID: %d, prayerCreator: %d, groupCreator: %d, admin: %v, canDelete (before subject check): %v",
+			userID, existingPrayer.Created_By, group.Created_By, admin, canDelete)
+
+		// Check if user is linked subject (needed for notification regardless of other auth)
+		var isLinkedSubject bool
+		if existingPrayer.Prayer_Subject_ID != nil {
+			log.Printf("[RemovePrayerAccess] Checking if user is linked subject - Prayer_Subject_ID: %d", *existingPrayer.Prayer_Subject_ID)
+			var prayerSubject models.PrayerSubject
+			subjectFound, err := initializers.DB.From("prayer_subject").
+				Select("prayer_subject_id", "user_profile_id", "link_status").
+				Where(goqu.C("prayer_subject_id").Eq(*existingPrayer.Prayer_Subject_ID)).
+				ScanStruct(&prayerSubject)
+
+			if err == nil && subjectFound {
+				log.Printf("[RemovePrayerAccess] Found prayer subject - user_profile_id: %v, link_status: %s",
+					prayerSubject.User_Profile_ID, prayerSubject.Link_Status)
+				if prayerSubject.User_Profile_ID != nil &&
+					*prayerSubject.User_Profile_ID == userID &&
+					prayerSubject.Link_Status == "linked" {
+					isLinkedSubject = true
+				}
+			}
+		}
+
+		// Track notification data if linked subject is removing from group
+		if isLinkedSubject {
+			linkedSubjectRemoving = true
+			groupNameForNotification = group.Group_Name
+			groupIDForNotification = group.Group_Profile_ID
+			log.Printf("[RemovePrayerAccess] Linked subject confirmed - will send notification after deletion")
+			// Get subject's display name
+			var subjectUser models.UserProfile
+			userFound, _ := initializers.DB.From("user_profile").
+				Select("first_name", "username").
+				Where(goqu.C("user_profile_id").Eq(userID)).
+				ScanStruct(&subjectUser)
+			if userFound {
+				if subjectUser.First_Name != "" {
+					linkedSubjectName = subjectUser.First_Name
+				} else {
+					linkedSubjectName = subjectUser.Username
+				}
+			} else {
+				linkedSubjectName = "Someone"
+			}
+		}
+
+		// If not already authorized (admin/creator/group creator), linked subject can delete
+		if !canDelete && isLinkedSubject {
+			canDelete = true
+		}
+
+		if !canDelete {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "You are not authorized to remove access to this prayer"})
 			return
 		}
 
 	} else if existingPrayerAccess.Access_Type == "user" {
 
-		// allow deletion if user is admin, or if user either created the prayer or is the user to whom access is granted
-		if !admin && (existingPrayer.Created_By != userID || existingPrayerAccess.Access_Type_ID != userID) {
+		// Allow deletion if user is admin, prayer creator, access recipient, or linked subject
+		canDelete := admin || existingPrayer.Created_By == userID || existingPrayerAccess.Access_Type_ID == userID
+
+		// If not already authorized, check if user is the linked subject
+		if !canDelete && existingPrayer.Prayer_Subject_ID != nil {
+			var prayerSubject models.PrayerSubject
+			subjectFound, err := initializers.DB.From("prayer_subject").
+				Select("prayer_subject_id", "user_profile_id", "link_status").
+				Where(goqu.C("prayer_subject_id").Eq(*existingPrayer.Prayer_Subject_ID)).
+				ScanStruct(&prayerSubject)
+
+			if err == nil && subjectFound {
+				if prayerSubject.User_Profile_ID != nil &&
+					*prayerSubject.User_Profile_ID == userID &&
+					prayerSubject.Link_Status == "linked" {
+					canDelete = true
+				}
+			}
+		}
+
+		if !canDelete {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "You are not authorized to remove access to this prayer"})
 			return
 		}
@@ -523,6 +730,20 @@ func RemovePrayerAccess(c *gin.Context) {
 		return
 	}
 
+	// Notify prayer creator if linked subject removed from group
+	if linkedSubjectRemoving {
+		log.Printf("[RemovePrayerAccess] Triggering PRAYER_REMOVED_FROM_GROUP notification - creator: %d, prayer: %d, group: %d, subject: %d, subjectName: %s, groupName: %s",
+			existingPrayer.Created_By, prayerId, groupIDForNotification, userID, linkedSubjectName, groupNameForNotification)
+		go services.NotifyCreatorOfPrayerRemovedFromGroup(
+			existingPrayer.Created_By,
+			prayerId,
+			groupIDForNotification,
+			userID,
+			linkedSubjectName,
+			groupNameForNotification,
+		)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "Prayer access removed successfully"})
 
 }
@@ -558,9 +779,41 @@ func UpdatePrayer(c *gin.Context) {
 		return
 	}
 
-	if !admin && existingPrayer.Created_By != userID {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "You are not authorized to update this prayer"})
+	// Check if user is authorized to edit this prayer
+	// Allowed: admin, prayer creator, OR linked subject
+	log.Printf("DEBUG UpdatePrayer: userID=%d, existingPrayer.Created_By=%d, admin=%v", userID, existingPrayer.Created_By, admin)
+	canEdit := admin || existingPrayer.Created_By == userID
+
+	// If not already authorized, check if user is the linked subject
+	if !canEdit && existingPrayer.Prayer_Subject_ID != nil {
+		var prayerSubject models.PrayerSubject
+		subjectFound, err := initializers.DB.From("prayer_subject").
+			Select("prayer_subject_id", "user_profile_id", "link_status").
+			Where(goqu.C("prayer_subject_id").Eq(*existingPrayer.Prayer_Subject_ID)).
+			ScanStruct(&prayerSubject)
+
+		if err == nil && subjectFound {
+			// User can edit if they are linked to the subject
+			if prayerSubject.User_Profile_ID != nil &&
+				*prayerSubject.User_Profile_ID == userID &&
+				prayerSubject.Link_Status == "linked" {
+				canEdit = true
+			}
+		}
+	}
+
+	if !canEdit {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Only the prayer creator or subject can edit"})
 		return
+	}
+
+	// If user is the subject (not the creator), prevent changing prayer_subject_id
+	isSubjectEdit := canEdit && existingPrayer.Created_By != userID && !admin
+	if isSubjectEdit && updatedPrayer.Prayer_Subject_ID != nil {
+		if existingPrayer.Prayer_Subject_ID == nil || *updatedPrayer.Prayer_Subject_ID != *existingPrayer.Prayer_Subject_ID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Only the prayer creator can change who this prayer is for"})
+			return
+		}
 	}
 
 	// if any incoming field is nil, retain the existing value
@@ -617,6 +870,53 @@ func UpdatePrayer(c *gin.Context) {
 		return
 	}
 
+	// Determine action type - use "answered" if prayer is being marked answered for first time
+	actionType := models.HistoryActionEdited
+	if updatedPrayer.Is_Answered != nil && *updatedPrayer.Is_Answered &&
+		(existingPrayer.Is_Answered == nil || !*existingPrayer.Is_Answered) {
+		actionType = models.HistoryActionAnswered
+	}
+
+	// Log prayer edit to history (async, non-blocking)
+	go func(prayerID int, uid int, action string) {
+		historyEntry := models.PrayerEditHistory{
+			Prayer_ID:       prayerID,
+			User_Profile_ID: uid,
+			Action_Type:     action,
+		}
+		insert := initializers.DB.Insert("prayer_edit_history").Rows(historyEntry)
+		_, err := insert.Executor().Exec()
+		if err != nil {
+			log.Printf("Failed to log prayer %s to history: %v", action, err)
+		}
+	}(prayerId, userID, actionType)
+
+	// Send PRAYER_EDITED_BY_SUBJECT notification to creator (async)
+	if isSubjectEdit {
+		go func(creatorID int, pID int, subjectUID int) {
+			// Get subject's display name
+			var subjectName string
+			_, nameErr := initializers.DB.From("user_profile").
+				Select("first_name").
+				Where(goqu.C("user_profile_id").Eq(subjectUID)).
+				Executor().ScanVal(&subjectName)
+			if nameErr != nil || subjectName == "" {
+				_, nameErr = initializers.DB.From("user_profile").
+					Select("username").
+					Where(goqu.C("user_profile_id").Eq(subjectUID)).
+					Executor().ScanVal(&subjectName)
+				if nameErr != nil {
+					subjectName = "Someone" // Fallback if both queries fail
+				}
+			}
+			if subjectName == "" {
+				subjectName = "Someone"
+			}
+
+			services.NotifyCreatorOfSubjectEdit(creatorID, pID, subjectUID, subjectName)
+		}(existingPrayer.Created_By, prayerId, userID)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "Prayer record updated successfully"})
 
 }
@@ -646,8 +946,30 @@ func DeletePrayer(c *gin.Context) {
 		return
 	}
 
-	if !admin && existingPrayer.Created_By != userID {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "You are not authorized to delete this prayer"})
+	// Check if user is authorized to delete this prayer
+	// Allowed: admin, prayer creator, OR linked subject
+	canDelete := admin || existingPrayer.Created_By == userID
+
+	// If not already authorized, check if user is the linked subject
+	if !canDelete && existingPrayer.Prayer_Subject_ID != nil {
+		var prayerSubject models.PrayerSubject
+		subjectFound, err := initializers.DB.From("prayer_subject").
+			Select("prayer_subject_id", "user_profile_id", "link_status").
+			Where(goqu.C("prayer_subject_id").Eq(*existingPrayer.Prayer_Subject_ID)).
+			ScanStruct(&prayerSubject)
+
+		if err == nil && subjectFound {
+			// User can delete if they are linked to the subject
+			if prayerSubject.User_Profile_ID != nil &&
+				*prayerSubject.User_Profile_ID == userID &&
+				prayerSubject.Link_Status == "linked" {
+				canDelete = true
+			}
+		}
+	}
+
+	if !canDelete {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Only the prayer creator or subject can delete"})
 		return
 	}
 
@@ -688,5 +1010,194 @@ func DeletePrayer(c *gin.Context) {
 		return
 	}
 
+	// Log prayer deletion to history (async, non-blocking)
+	go func(prayerID int, uid int) {
+		historyEntry := models.PrayerEditHistory{
+			Prayer_ID:       prayerID,
+			User_Profile_ID: uid,
+			Action_Type:     models.HistoryActionDeleted,
+		}
+		insert := initializers.DB.Insert("prayer_edit_history").Rows(historyEntry)
+		_, err := insert.Executor().Exec()
+		if err != nil {
+			log.Printf("Failed to log prayer deletion to history: %v", err)
+		}
+	}(prayerId, userID)
+
 	c.JSON(http.StatusOK, gin.H{"message": "Prayer record marked as deleted successfully"})
+}
+
+// HistoryEntry represents a single entry in the prayer edit history response
+type HistoryEntry struct {
+	History_ID      int       `json:"historyId" db:"prayer_edit_history_id"`
+	Action_Type     string    `json:"actionType" db:"action_type"`
+	Actor_ID        int       `json:"actorId" db:"user_profile_id"`
+	Actor_Name      string    `json:"actorName" db:"actor_name"`
+	DateTime_Create time.Time `json:"datetimeCreate" db:"datetime_create"`
+}
+
+// GetPrayerHistory returns the chronological edit history of a prayer.
+// Only the prayer creator can view history (privacy requirement).
+func GetPrayerHistory(c *gin.Context) {
+	userID := c.MustGet("currentUser").(models.UserProfile).User_Profile_ID
+	admin := c.MustGet("admin").(bool)
+
+	prayerID, err := strconv.Atoi(c.Param("prayer_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prayer ID", "details": err.Error()})
+		return
+	}
+
+	// Fetch the prayer to check authorization
+	var prayer models.Prayer
+	prayerFound, err := initializers.DB.From("prayer").
+		Select("prayer_id", "created_by").
+		Where(goqu.C("prayer_id").Eq(prayerID)).
+		ScanStruct(&prayer)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch prayer", "details": err.Error()})
+		return
+	}
+
+	if !prayerFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Prayer not found"})
+		return
+	}
+
+	// Allow anyone with prayer access to view history (same as viewing the prayer itself)
+	if !admin {
+		// Check if user has access to this prayer via prayer_access table
+		var count int64
+		found, err := initializers.DB.From("prayer_access").
+			Select(goqu.COUNT("*")).
+			Join(
+				goqu.T("user_group"),
+				goqu.On(
+					goqu.Or(
+						goqu.Ex{"prayer_access.access_type": "group", "prayer_access.access_type_id": goqu.I("user_group.group_profile_id")},
+						goqu.Ex{"prayer_access.access_type": "user", "prayer_access.access_type_id": goqu.I("user_group.user_profile_id")},
+					),
+				),
+			).
+			Where(
+				goqu.And(
+					goqu.I("prayer_access.prayer_id").Eq(prayerID),
+					goqu.I("user_group.user_profile_id").Eq(userID),
+				),
+			).
+			ScanVal(&count)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check prayer access", "details": err.Error()})
+			return
+		}
+
+		if !found || count == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"error": "You don't have access to this prayer"})
+			return
+		}
+	}
+
+	// Fetch history with actor names
+	var history []HistoryEntry
+	err = initializers.DB.From("prayer_edit_history").
+		Select(
+			goqu.I("prayer_edit_history.prayer_edit_history_id"),
+			goqu.I("prayer_edit_history.action_type"),
+			goqu.I("prayer_edit_history.user_profile_id"),
+			goqu.L("COALESCE(user_profile.first_name, user_profile.username, 'Unknown')").As("actor_name"),
+			goqu.I("prayer_edit_history.datetime_create"),
+		).
+		Join(
+			goqu.T("user_profile"),
+			goqu.On(goqu.I("prayer_edit_history.user_profile_id").Eq(goqu.I("user_profile.user_profile_id"))),
+		).
+		Where(goqu.I("prayer_edit_history.prayer_id").Eq(prayerID)).
+		Order(goqu.I("prayer_edit_history.datetime_create").Asc()).
+		ScanStructs(&history)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch prayer history", "details": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"history": history,
+	})
+}
+
+func GetPrayerAccessRecords(c *gin.Context) {
+	userID := c.MustGet("currentUser").(models.UserProfile).User_Profile_ID
+	admin := c.MustGet("admin").(bool)
+
+	prayerID, err := strconv.Atoi(c.Param("prayer_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid prayer ID"})
+		return
+	}
+
+	// Check if user has access to this prayer
+	if !admin {
+		var count int64
+		found, err := initializers.DB.From("prayer_access").
+			Select(goqu.COUNT("*")).
+			Join(
+				goqu.T("user_group"),
+				goqu.On(
+					goqu.Or(
+						goqu.Ex{"prayer_access.access_type": "group", "prayer_access.access_type_id": goqu.I("user_group.group_profile_id")},
+						goqu.Ex{"prayer_access.access_type": "user", "prayer_access.access_type_id": goqu.I("user_group.user_profile_id")},
+					),
+				),
+			).
+			Where(
+				goqu.And(
+					goqu.I("prayer_access.prayer_id").Eq(prayerID),
+					goqu.I("user_group.user_profile_id").Eq(userID),
+				),
+			).
+			ScanVal(&count)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check prayer access", "details": err.Error()})
+			return
+		}
+
+		if !found || count == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"error": "You don't have access to this prayer"})
+			return
+		}
+	}
+
+	// Fetch all group access records for this prayer
+	var accessRecords []models.PrayerAccess
+	err = initializers.DB.From("prayer_access").
+		Select(
+			"prayer_access_id",
+			"prayer_id",
+			"access_type",
+			"access_type_id",
+		).
+		Where(
+			goqu.C("prayer_id").Eq(prayerID),
+			goqu.C("access_type").Eq("group"),
+		).
+		ScanStructs(&accessRecords)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch prayer access records", "details": err.Error()})
+		return
+	}
+
+	// Extract just the group IDs
+	groupIds := make([]int, len(accessRecords))
+	for i, record := range accessRecords {
+		groupIds[i] = record.Access_Type_ID
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Prayer access records retrieved successfully",
+		"groupIds": groupIds,
+	})
 }

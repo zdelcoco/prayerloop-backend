@@ -82,7 +82,7 @@ func GetUserPrayerSubjects(c *gin.Context) {
 				goqu.I("prayer_category.prayer_category_id"),
 				goqu.I("prayer_category.category_name"),
 				goqu.I("prayer_category.category_color"),
-				goqu.I("prayer_category.display_sequence").As("category_display_seq"),
+				goqu.I("prayer_category.display_sequence").As("category_display_sequence"),
 			).
 			Join(
 				goqu.T("prayer"),
@@ -166,7 +166,7 @@ func GetUserPrayerSubjects(c *gin.Context) {
 							goqu.I("prayer_category.prayer_category_id"),
 							goqu.I("prayer_category.category_name"),
 							goqu.I("prayer_category.category_color"),
-							goqu.I("prayer_category.display_sequence").As("category_display_seq"),
+							goqu.I("prayer_category.display_sequence").As("category_display_sequence"),
 						).
 						Join(
 							goqu.T("prayer"),
@@ -286,10 +286,11 @@ func CreatePrayerSubject(c *gin.Context) {
 		useLinkedUserPhoto = *newSubject.Use_Linked_User_Photo
 	}
 
-	// Determine link status
+	// Determine link status - match UpdatePrayerSubject behavior
 	linkStatus := "unlinked"
-	if newSubject.User_Profile_ID != nil && *newSubject.User_Profile_ID == userID {
-		// Self-linking
+	if newSubject.User_Profile_ID != nil && *newSubject.User_Profile_ID > 0 {
+		// Link to any valid user (self or other) - authorization for editing is
+		// controlled by the linked user's identity, not link_status
 		linkStatus = "linked"
 	}
 
