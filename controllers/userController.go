@@ -366,6 +366,7 @@ func GetUserGroups(c *gin.Context) {
 			"group_profile.created_by",
 			"group_profile.updated_by",
 			"group_profile.deleted",
+			"group_profile.prayer_subject_id",
 			"user_group.group_display_sequence",
 		).
 		InnerJoin(

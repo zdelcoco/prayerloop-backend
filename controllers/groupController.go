@@ -80,6 +80,41 @@ func CreateGroup(c *gin.Context) {
 		return
 	}
 
+	// Auto-create contact card (prayer_subject) for the new group
+	// This allows group members to create "group prayers" for the circle itself
+	prayerSubject := models.PrayerSubject{
+		Prayer_Subject_Type:         "group",
+		Prayer_Subject_Display_Name: newGroup.Group_Name,
+		Display_Sequence:            0, // Will be sorted with other contacts
+		Link_Status:                 "unlinked",
+		Created_By:                  user.User_Profile_ID,
+		Updated_By:                  user.User_Profile_ID,
+	}
+
+	subjectInsert := initializers.DB.Insert("prayer_subject").Rows(prayerSubject).Returning("prayer_subject_id")
+
+	var insertedSubjectID int
+	_, err = subjectInsert.Executor().ScanVal(&insertedSubjectID)
+	if err != nil {
+		log.Printf("Failed to create contact card for group: %v", err)
+		// Non-fatal - group creation still succeeded
+	} else {
+		log.Printf("Created contact card (prayer_subject_id=%d) for group %s (group_profile_id=%d)",
+			insertedSubjectID, newGroup.Group_Name, group.Group_Profile_ID)
+
+		// Link the prayer_subject to the group_profile
+		updateGroupSubject := initializers.DB.Update("group_profile").
+			Set(goqu.Record{"prayer_subject_id": insertedSubjectID}).
+			Where(goqu.C("group_profile_id").Eq(group.Group_Profile_ID))
+		_, err = updateGroupSubject.Executor().Exec()
+		if err != nil {
+			log.Printf("Failed to link prayer_subject to group: %v", err)
+			// Non-fatal - group creation still succeeded
+		} else {
+			group.Prayer_Subject_ID = &insertedSubjectID
+		}
+	}
+
 	c.JSON(http.StatusCreated, group)
 }
 
@@ -104,6 +139,7 @@ func GetGroup(c *gin.Context) {
 			goqu.I("group_profile.updated_by"),
 			goqu.I("group_profile.datetime_create"),
 			goqu.I("group_profile.datetime_update"),
+			goqu.I("group_profile.prayer_subject_id"),
 		).
 		Join(
 			goqu.T("user_group"),
@@ -156,6 +192,7 @@ func GetAllGroups(c *gin.Context) {
 			"created_by",
 			"updated_by",
 			"deleted",
+			"prayer_subject_id",
 		).
 		ScanStructs(&groups)
 

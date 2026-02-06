@@ -307,6 +307,9 @@ func NotifyCreatorOfSubjectEdit(
 		return
 	}
 
+	// Find a shared group for better navigation context
+	sharedGroupID := getSharedGroupForCommentNotification(prayerID, subjectUserID, creatorID)
+
 	notificationMessage := fmt.Sprintf("%s edited a prayer about them", subjectName)
 
 	// Create notification record with target for navigation
@@ -318,6 +321,7 @@ func NotifyCreatorOfSubjectEdit(
 		Created_By:           subjectUserID,
 		Updated_By:           subjectUserID,
 		Target_Prayer_ID:     &prayerID,
+		Target_Group_ID:      sharedGroupID,
 	}
 
 	insert := initializers.DB.Insert("notification").Rows(notification)
@@ -342,8 +346,171 @@ func NotifyCreatorOfSubjectEdit(
 		},
 	}
 
+	// Include groupId in push notification if we found a shared group
+	if sharedGroupID != nil {
+		payload.Data["groupId"] = strconv.Itoa(*sharedGroupID)
+	}
+
 	err = pushService.SendNotificationToUser(creatorID, payload)
 	if err != nil {
 		log.Printf("Failed to send PRAYER_EDITED_BY_SUBJECT push notification: %v", err)
+	}
+}
+
+// getSharedGroupForCommentNotification finds a group where both the commenter and recipient are members
+// and where the prayer is shared. Returns the first matching group ID, or nil if none found.
+func getSharedGroupForCommentNotification(prayerID int, commenterID int, recipientID int) *int {
+	// Query to find groups where:
+	// 1. The prayer is shared (via prayer_access with access_type='group')
+	// 2. Both commenter and recipient are active members
+	query := `
+		SELECT DISTINCT pa.access_type_id AS group_id
+		FROM prayer_access pa
+		JOIN user_group ug1 ON pa.access_type_id = ug1.group_profile_id
+		JOIN user_group ug2 ON pa.access_type_id = ug2.group_profile_id
+		WHERE pa.prayer_id = $1
+		  AND pa.access_type = 'group'
+		  AND ug1.user_profile_id = $2
+		  AND ug1.is_active = TRUE
+		  AND ug2.user_profile_id = $3
+		  AND ug2.is_active = TRUE
+		LIMIT 1
+	`
+
+	var groupID int
+	err := initializers.DB.QueryRow(query, prayerID, commenterID, recipientID).Scan(&groupID)
+	if err != nil {
+		// No shared group found, or database error
+		return nil
+	}
+
+	return &groupID
+}
+
+// NotifyUsersOfNewComment notifies prayer creator, subject, and previous commenters of new comment.
+// Debounced with 15-minute window to prevent notification spam from rapid comments.
+func NotifyUsersOfNewComment(prayerID int, commentID int, commenterID int) {
+	// Get commenter name for notification message
+	var commenterName string
+	_, _ = initializers.DB.From("user_profile").
+		Select("first_name").
+		Where(goqu.C("user_profile_id").Eq(commenterID)).
+		ScanVal(&commenterName)
+
+	if commenterName == "" {
+		commenterName = "Someone"
+	}
+
+	// 1. Get prayer creator
+	var prayer models.Prayer
+	_, err := initializers.DB.From("prayer").
+		Where(goqu.C("prayer_id").Eq(prayerID)).
+		ScanStruct(&prayer)
+	if err != nil {
+		log.Printf("Failed to fetch prayer for comment notification: %v", err)
+		return
+	}
+
+	recipientIDs := []int{}
+
+	// 2. Add creator if not the commenter
+	if prayer.Created_By != commenterID {
+		recipientIDs = append(recipientIDs, prayer.Created_By)
+	}
+
+	// 3. Add linked subject user if exists and not the commenter
+	if prayer.Prayer_Subject_ID != nil {
+		var subjectUserID *int
+		_, _ = initializers.DB.From("prayer_subject").
+			Select("user_profile_id").
+			Where(goqu.C("prayer_subject_id").Eq(*prayer.Prayer_Subject_ID)).
+			ScanVal(&subjectUserID)
+
+		if subjectUserID != nil && *subjectUserID != commenterID {
+			recipientIDs = append(recipientIDs, *subjectUserID)
+		}
+	}
+
+	// 4. Add previous commenters (excluding current commenter and already-added users)
+	var previousCommenters []int
+	_ = initializers.DB.From("prayer_comment").
+		Select(goqu.DISTINCT("user_profile_id")).
+		Where(
+			goqu.And(
+				goqu.C("prayer_id").Eq(prayerID),
+				goqu.C("comment_id").Neq(commentID), // Exclude this comment
+				goqu.C("user_profile_id").Neq(commenterID), // Exclude commenter
+			),
+		).
+		ScanVals(&previousCommenters)
+
+	// Deduplicate: only add if not already in recipientIDs
+	for _, prevCommenter := range previousCommenters {
+		alreadyAdded := false
+		for _, existing := range recipientIDs {
+			if existing == prevCommenter {
+				alreadyAdded = true
+				break
+			}
+		}
+		if !alreadyAdded {
+			recipientIDs = append(recipientIDs, prevCommenter)
+		}
+	}
+
+	// 5. For each recipient, check debounce and create notification
+	for _, recipientID := range recipientIDs {
+		// Check 15-minute debounce window
+		if !shouldSendDebounced(models.NotificationTypePrayerCommentAdded, recipientID, prayerID, 15) {
+			log.Printf("Debounced comment notification for user %d, prayer %d", recipientID, prayerID)
+			continue
+		}
+
+		// Find a shared group for better navigation context
+		sharedGroupID := getSharedGroupForCommentNotification(prayerID, commenterID, recipientID)
+
+		notificationMessage := fmt.Sprintf("%s commented on a prayer", commenterName)
+
+		notification := models.Notification{
+			User_Profile_ID:      recipientID,
+			Notification_Type:    models.NotificationTypePrayerCommentAdded,
+			Notification_Message: notificationMessage,
+			Notification_Status:  models.NotificationStatusUnread,
+			Target_Prayer_ID:     &prayerID,
+			Target_Comment_ID:    &commentID,
+			Target_Group_ID:      sharedGroupID, // Include group context if found
+			Created_By:           commenterID,
+			Updated_By:           commenterID,
+		}
+
+		insert := initializers.DB.Insert("notification").Rows(notification)
+		_, insertErr := insert.Executor().Exec()
+		if insertErr != nil {
+			log.Printf("Failed to create comment notification: %v", insertErr)
+		} else {
+			// Successfully created notification, send push
+			pushService := GetPushNotificationService()
+			if pushService != nil {
+				payload := NotificationPayload{
+					Title: "New Comment",
+					Body:  notificationMessage,
+					Data: map[string]string{
+						"type":      models.NotificationTypePrayerCommentAdded,
+						"prayerId":  strconv.Itoa(prayerID),
+						"commentId": strconv.Itoa(commentID),
+					},
+				}
+
+				// Include groupId in push notification if we found a shared group
+				if sharedGroupID != nil {
+					payload.Data["groupId"] = strconv.Itoa(*sharedGroupID)
+				}
+
+				err = pushService.SendNotificationToUser(recipientID, payload)
+				if err != nil {
+					log.Printf("Failed to send comment push notification: %v", err)
+				}
+			}
+		}
 	}
 }

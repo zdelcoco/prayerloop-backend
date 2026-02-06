@@ -61,7 +61,7 @@ func GetUserPrayerSubjects(c *gin.Context) {
 		var prayers []models.UserPrayer
 		dbErr := initializers.DB.From("prayer_access").
 			Select(
-				goqu.I("prayer_access.access_type_id").As("user_profile_id"),
+				goqu.L("CASE WHEN prayer_access.access_type = 'user' THEN prayer_access.access_type_id ELSE prayer_access.created_by END").As("user_profile_id"),
 				goqu.I("prayer.prayer_id"),
 				goqu.I("prayer_access.prayer_access_id"),
 				goqu.I("prayer_access.display_sequence"),
@@ -98,10 +98,19 @@ func GetUserPrayerSubjects(c *gin.Context) {
 			).
 			Where(
 				goqu.And(
-					goqu.Ex{"prayer_access.access_type": "user"},
-					goqu.Ex{"prayer_access.access_type_id": userID},
-					goqu.Ex{"prayer.prayer_subject_id": subject.Prayer_Subject_ID},
 					goqu.Ex{"prayer.deleted": false},
+					goqu.Or(
+						goqu.And(
+							goqu.Ex{"prayer_access.access_type": "user"},
+							goqu.Ex{"prayer_access.access_type_id": userID},
+							goqu.Ex{"prayer.prayer_subject_id": subject.Prayer_Subject_ID},
+						),
+						goqu.And(
+							goqu.Ex{"prayer_access.access_type": "subject"},
+							goqu.Ex{"prayer_access.access_type_id": subject.Prayer_Subject_ID},
+							goqu.Ex{"prayer_access.created_by": userID},
+						),
+					),
 				),
 			).
 			Order(
@@ -145,7 +154,7 @@ func GetUserPrayerSubjects(c *gin.Context) {
 					prayers = []models.UserPrayer{}
 					dbErr = initializers.DB.From("prayer_access").
 						Select(
-							goqu.I("prayer_access.access_type_id").As("user_profile_id"),
+							goqu.L("CASE WHEN prayer_access.access_type = 'user' THEN prayer_access.access_type_id ELSE prayer_access.created_by END").As("user_profile_id"),
 							goqu.I("prayer.prayer_id"),
 							goqu.I("prayer_access.prayer_access_id"),
 							goqu.I("prayer_access.display_sequence"),
@@ -182,10 +191,19 @@ func GetUserPrayerSubjects(c *gin.Context) {
 						).
 						Where(
 							goqu.And(
-								goqu.Ex{"prayer_access.access_type": "user"},
-								goqu.Ex{"prayer_access.access_type_id": userID},
-								goqu.Ex{"prayer.prayer_subject_id": subject.Prayer_Subject_ID},
 								goqu.Ex{"prayer.deleted": false},
+								goqu.Or(
+									goqu.And(
+										goqu.Ex{"prayer_access.access_type": "user"},
+										goqu.Ex{"prayer_access.access_type_id": userID},
+										goqu.Ex{"prayer.prayer_subject_id": subject.Prayer_Subject_ID},
+									),
+									goqu.And(
+										goqu.Ex{"prayer_access.access_type": "subject"},
+										goqu.Ex{"prayer_access.access_type_id": subject.Prayer_Subject_ID},
+										goqu.Ex{"prayer_access.created_by": userID},
+									),
+								),
 							),
 						).
 						Order(
@@ -211,6 +229,8 @@ func GetUserPrayerSubjects(c *gin.Context) {
 			User_Profile_ID:             subject.User_Profile_ID,
 			Use_Linked_User_Photo:       subject.Use_Linked_User_Photo,
 			Link_Status:                 subject.Link_Status,
+			Phone_Number:                subject.Phone_Number,
+			Email:                       subject.Email,
 			Datetime_Create:             subject.Datetime_Create,
 			Datetime_Update:             subject.Datetime_Update,
 			Created_By:                  subject.Created_By,
@@ -303,6 +323,8 @@ func CreatePrayerSubject(c *gin.Context) {
 		User_Profile_ID:             newSubject.User_Profile_ID,
 		Use_Linked_User_Photo:       useLinkedUserPhoto,
 		Link_Status:                 linkStatus,
+		Phone_Number:                newSubject.Phone_Number,
+		Email:                       newSubject.Email,
 		Created_By:                  userID,
 		Updated_By:                  userID,
 	}
@@ -378,6 +400,9 @@ func UpdatePrayerSubject(c *gin.Context) {
 		return
 	}
 
+	// DEBUG: Log received update data
+	log.Printf("UpdatePrayerSubject received data: %+v", updateData)
+
 	// Build update record
 	updateRecord := goqu.Record{
 		"updated_by":      currentUser.User_Profile_ID,
@@ -439,11 +464,32 @@ func UpdatePrayerSubject(c *gin.Context) {
 		}
 	}
 
+	if updateData.Phone_Number != nil {
+		// Empty string means clear the phone number
+		if strings.TrimSpace(*updateData.Phone_Number) == "" {
+			updateRecord["phone_number"] = nil
+		} else {
+			updateRecord["phone_number"] = *updateData.Phone_Number
+		}
+	}
+
+	if updateData.Email != nil {
+		// Empty string means clear the email
+		if strings.TrimSpace(*updateData.Email) == "" {
+			updateRecord["email"] = nil
+		} else {
+			updateRecord["email"] = *updateData.Email
+		}
+	}
+
 	// Check if there are fields to update beyond updated_by and datetime_update
 	if len(updateRecord) <= 2 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No valid fields provided for update"})
 		return
 	}
+
+	// DEBUG: Log updateRecord being sent to database
+	log.Printf("UpdatePrayerSubject updateRecord: %+v", updateRecord)
 
 	// Perform update
 	update := initializers.DB.Update("prayer_subject").
@@ -991,10 +1037,15 @@ func GetSubjectMembers(c *gin.Context) {
 			goqu.I("prayer_subject.prayer_subject_type").As("member_type"),
 			goqu.I("prayer_subject.photo_s3_key").As("member_photo_s3_key"),
 			goqu.I("prayer_subject.user_profile_id").As("member_user_profile_id"),
+			goqu.I("user_profile.phone_number").As("member_phone_number"),
 		).
 		Join(
 			goqu.T("prayer_subject"),
 			goqu.On(goqu.Ex{"prayer_subject_membership.member_prayer_subject_id": goqu.I("prayer_subject.prayer_subject_id")}),
+		).
+		LeftJoin(
+			goqu.T("user_profile"),
+			goqu.On(goqu.Ex{"prayer_subject.user_profile_id": goqu.I("user_profile.user_profile_id")}),
 		).
 		Where(goqu.C("group_prayer_subject_id").Eq(subjectID)).
 		Order(goqu.I("prayer_subject_membership.datetime_create").Asc()).

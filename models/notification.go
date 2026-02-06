@@ -12,6 +12,10 @@ const (
 	// Recipient: The prayer creator (prayer.created_by).
 	NotificationTypePrayerEditedBySubject = "PRAYER_EDITED_BY_SUBJECT"
 
+	// NotificationTypePrayerCommentAdded fires when a user comments on a prayer.
+	// Recipients: Prayer creator, linked subject, and previous commenters (excluding the commenter).
+	NotificationTypePrayerCommentAdded = "PRAYER_COMMENT_ADDED"
+
 	// NotificationTypePrayerShared fires when a prayer is shared to a circle/group.
 	// Recipients: All other members of the circle/group.
 	NotificationTypePrayerShared = "PRAYER_SHARED"
@@ -47,4 +51,5 @@ type Notification struct {
 	Updated_By           int       `json:"updatedBy"`
 	Target_Prayer_ID     *int      `json:"targetPrayerId" db:"target_prayer_id" goqu:"skipupdate"`
 	Target_Group_ID      *int      `json:"targetGroupId" db:"target_group_id" goqu:"skipupdate"`
+	Target_Comment_ID    *int      `json:"targetCommentId" db:"target_comment_id" goqu:"skipupdate"`
 }

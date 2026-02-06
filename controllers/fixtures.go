@@ -91,6 +91,7 @@ func MockAdminUserWithPassword() models.UserProfile {
 
 // MockGroupProfile creates a sample group for testing
 func MockGroupProfile() models.GroupProfile {
+	prayerSubjectID := 100
 	return models.GroupProfile{
 		Group_Profile_ID:       1,
 		Group_Name:             "Test Group",
@@ -100,6 +101,7 @@ func MockGroupProfile() models.GroupProfile {
 		Updated_By:             1,
 		Datetime_Create:        time.Now(),
 		Datetime_Update:        time.Now(),
+		Prayer_Subject_ID:      &prayerSubjectID,
 		Group_Display_Sequence: 0,
 	}
 }
