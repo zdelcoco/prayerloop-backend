@@ -61,7 +61,7 @@ func GetUserPrayerSubjects(c *gin.Context) {
 		var prayers []models.UserPrayer
 		dbErr := initializers.DB.From("prayer_access").
 			Select(
-				goqu.I("prayer_access.access_type_id").As("user_profile_id"),
+				goqu.L("CASE WHEN prayer_access.access_type = 'user' THEN prayer_access.access_type_id ELSE prayer_access.created_by END").As("user_profile_id"),
 				goqu.I("prayer.prayer_id"),
 				goqu.I("prayer_access.prayer_access_id"),
 				goqu.I("prayer_access.display_sequence"),
@@ -98,10 +98,19 @@ func GetUserPrayerSubjects(c *gin.Context) {
 			).
 			Where(
 				goqu.And(
-					goqu.Ex{"prayer_access.access_type": "user"},
-					goqu.Ex{"prayer_access.access_type_id": userID},
-					goqu.Ex{"prayer.prayer_subject_id": subject.Prayer_Subject_ID},
 					goqu.Ex{"prayer.deleted": false},
+					goqu.Or(
+						goqu.And(
+							goqu.Ex{"prayer_access.access_type": "user"},
+							goqu.Ex{"prayer_access.access_type_id": userID},
+							goqu.Ex{"prayer.prayer_subject_id": subject.Prayer_Subject_ID},
+						),
+						goqu.And(
+							goqu.Ex{"prayer_access.access_type": "subject"},
+							goqu.Ex{"prayer_access.access_type_id": subject.Prayer_Subject_ID},
+							goqu.Ex{"prayer_access.created_by": userID},
+						),
+					),
 				),
 			).
 			Order(
@@ -145,7 +154,7 @@ func GetUserPrayerSubjects(c *gin.Context) {
 					prayers = []models.UserPrayer{}
 					dbErr = initializers.DB.From("prayer_access").
 						Select(
-							goqu.I("prayer_access.access_type_id").As("user_profile_id"),
+							goqu.L("CASE WHEN prayer_access.access_type = 'user' THEN prayer_access.access_type_id ELSE prayer_access.created_by END").As("user_profile_id"),
 							goqu.I("prayer.prayer_id"),
 							goqu.I("prayer_access.prayer_access_id"),
 							goqu.I("prayer_access.display_sequence"),
@@ -182,10 +191,19 @@ func GetUserPrayerSubjects(c *gin.Context) {
 						).
 						Where(
 							goqu.And(
-								goqu.Ex{"prayer_access.access_type": "user"},
-								goqu.Ex{"prayer_access.access_type_id": userID},
-								goqu.Ex{"prayer.prayer_subject_id": subject.Prayer_Subject_ID},
 								goqu.Ex{"prayer.deleted": false},
+								goqu.Or(
+									goqu.And(
+										goqu.Ex{"prayer_access.access_type": "user"},
+										goqu.Ex{"prayer_access.access_type_id": userID},
+										goqu.Ex{"prayer.prayer_subject_id": subject.Prayer_Subject_ID},
+									),
+									goqu.And(
+										goqu.Ex{"prayer_access.access_type": "subject"},
+										goqu.Ex{"prayer_access.access_type_id": subject.Prayer_Subject_ID},
+										goqu.Ex{"prayer_access.created_by": userID},
+									),
+								),
 							),
 						).
 						Order(

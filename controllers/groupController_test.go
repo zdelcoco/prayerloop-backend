@@ -62,6 +62,14 @@ func TestCreateGroup(t *testing.T) {
 				// Mock user_group insert
 				mock.ExpectExec("INSERT INTO \"user_group\"").
 					WillReturnResult(sqlmock.NewResult(1, 1))
+
+				// Mock prayer_subject insert (auto-created contact card)
+				mock.ExpectQuery("INSERT INTO \"prayer_subject\"").
+					WillReturnRows(sqlmock.NewRows([]string{"prayer_subject_id"}).AddRow(100))
+
+				// Mock group_profile update to link prayer_subject_id
+				mock.ExpectExec("UPDATE \"group_profile\"").
+					WillReturnResult(sqlmock.NewResult(0, 1))
 			}
 
 			c, w := SetupTestContext()
@@ -153,12 +161,13 @@ func TestGetGroup(t *testing.T) {
 				if tt.userInGroup {
 					// Mock successful group fetch
 					now := time.Now()
-					rows := sqlmock.NewRows([]string{"group_profile_id", "group_name", "group_description", "is_active", "created_by", "updated_by", "datetime_create", "datetime_update"}).
-						AddRow(1, "Test Group", "A test group", true, 1, 1, now, now)
+					prayerSubjectID := 100
+					rows := sqlmock.NewRows([]string{"group_profile_id", "group_name", "group_description", "is_active", "created_by", "updated_by", "datetime_create", "datetime_update", "prayer_subject_id"}).
+						AddRow(1, "Test Group", "A test group", true, 1, 1, now, now, prayerSubjectID)
 					mock.ExpectQuery("SELECT").WillReturnRows(rows)
 				} else {
 					// Mock empty result (group not found or user not in group)
-					mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"group_profile_id", "group_name", "group_description", "is_active", "created_by", "updated_by", "datetime_create", "datetime_update"}))
+					mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"group_profile_id", "group_name", "group_description", "is_active", "created_by", "updated_by", "datetime_create", "datetime_update", "prayer_subject_id"}))
 				}
 			}
 
@@ -227,12 +236,13 @@ func TestGetAllGroups(t *testing.T) {
 			if tt.isAdmin {
 				if tt.hasGroups {
 					now := time.Now()
-					rows := sqlmock.NewRows([]string{"group_profile_id", "group_name", "group_description", "is_active", "datetime_create", "datetime_update", "created_by", "updated_by", "deleted"}).
-						AddRow(1, "Group 1", "Description 1", true, now, now, 1, 1, false).
-						AddRow(2, "Group 2", "Description 2", true, now, now, 1, 1, false)
+					prayerSubjectID := 100
+					rows := sqlmock.NewRows([]string{"group_profile_id", "group_name", "group_description", "is_active", "datetime_create", "datetime_update", "created_by", "updated_by", "deleted", "prayer_subject_id"}).
+						AddRow(1, "Group 1", "Description 1", true, now, now, 1, 1, false, prayerSubjectID).
+						AddRow(2, "Group 2", "Description 2", true, now, now, 1, 1, false, prayerSubjectID)
 					mock.ExpectQuery("SELECT").WillReturnRows(rows)
 				} else {
-					mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"group_profile_id", "group_name", "group_description", "is_active", "datetime_create", "datetime_update", "created_by", "updated_by", "deleted"}))
+					mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"group_profile_id", "group_name", "group_description", "is_active", "datetime_create", "datetime_update", "created_by", "updated_by", "deleted", "prayer_subject_id"}))
 				}
 			}
 
