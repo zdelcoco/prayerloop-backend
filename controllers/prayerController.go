@@ -364,6 +364,36 @@ func AddPrayerAccess(c *gin.Context) {
 				return
 			}
 
+			// Auto-create user access when sharing to group (share-to-self fix)
+			if newPrayerAccess.Access_Type == "group" {
+				// Check if user access already exists
+				var existingUserAccess models.PrayerAccess
+				userAccessExists, _ := initializers.DB.From("prayer_access").
+					Select("prayer_access_id").
+					Where(
+						goqu.C("prayer_id").Eq(prayerId),
+						goqu.C("access_type").Eq("user"),
+						goqu.C("access_type_id").Eq(userID),
+					).
+					ScanStruct(&existingUserAccess)
+
+				if !userAccessExists {
+					userAccessInsert := models.PrayerAccess{
+						Prayer_ID:      prayerId,
+						Access_Type:    "user",
+						Access_Type_ID: userID,
+						Created_By:     userID,
+						Updated_By:     userID,
+					}
+					userInsert := initializers.DB.Insert("prayer_access").Rows(userAccessInsert)
+					_, userErr := userInsert.Executor().Exec()
+					if userErr != nil {
+						log.Printf("Failed to create user access for group share: %v", userErr)
+						// Non-fatal - group share still succeeded
+					}
+				}
+			}
+
 			// Log prayer share to history (async, non-blocking) - only for group shares
 			if newPrayerAccess.Access_Type == "group" {
 				go func(prayerID int, uid int) {
