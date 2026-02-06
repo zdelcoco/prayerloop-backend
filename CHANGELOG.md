@@ -6,6 +6,80 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project uses a date-based versioning scheme: `[year].[month].[sequence]`
 (e.g., 2025.11.3 is the third release in November 2025).
 
+## [2026.2.1] - 2026-02-06
+
+### Added
+
+- **Prayer Comments System** (Phase 7)
+  - `POST /prayers/:id/comments` - Create comment with prayer access checks
+  - `GET /prayers/:id/comments` - Fetch comments with privacy filtering
+  - `PUT /prayers/:id/comments/:commentId` - Update comment text
+  - `DELETE /prayers/:id/comments/:commentId` - Hard delete comment
+  - `PATCH /prayers/:id/comments/:commentId/hide` - Soft delete for moderation
+  - `PATCH /prayers/:id/comments/:commentId/privacy` - Toggle private/public visibility
+  - Dual-moderator pattern: prayer creator and linked subject can both moderate
+  - Privacy filtering at SQL layer (private comments visible to owner + moderators only)
+  - Comment text max 500 characters enforced on backend
+- **Comment Notifications** (Phase 7)
+  - `PRAYER_COMMENT_ADDED` notification type with 15-minute debounce batching
+  - Recipient deduplication (creator + subject + previous commenters, self-excluded)
+  - `target_comment_id` field for deep-linking to specific comments
+- **Prayer Analytics** (Phase 8)
+  - `POST /prayers/:id/analytics` - Record prayer event with 5-minute cooldown
+  - `GET /prayers/:id/analytics` - Fetch aggregate analytics (total prayers, unique users)
+  - Upsert pattern for analytics records (INSERT or UPDATE atomically)
+  - Returns 200 with existing data during cooldown (silent ignore, not error)
+  - Zero-value defaults when no analytics record exists
+
+### Changed
+
+- **Group Creation** (Phase 9) - Auto-creates prayer_subject contact card with type='group' on group creation
+- **Prayer Sharing** (Phase 9) - Auto-creates user access when sharing to group, fixing share-to-self regression
+- **Prayer Queries** (Phase 9) - Added comment_count aggregation via LEFT JOIN on prayer endpoints
+- **Contact Cards** (Phase 6) - Group member endpoint returns phone number and email via LEFT JOIN with user_profile
+- **Notification Deep Linking** (Phase 7.1) - Group context added to `PRAYER_EDITED_BY_SUBJECT` notifications for navigation
+- Both group auto-creation operations are non-fatal (log error but don't block primary operation)
+
+### Database
+
+- `023_add_prayer_comment.sql` - Created `prayer_comment` table with `is_private` and `is_hidden` flags; added `target_comment_id` to notification table
+- `022_add_phone_email_to_prayer_subject.sql` - Added `phone_number` and `email` columns to `prayer_subject`
+- `024_add_prayer_subject_id_to_group_profile.sql` - Links group to auto-created contact card
+
+## [2026.1.1] - 2026-01-30
+
+### Added
+
+- **Prayer Edit History** (Phase 1)
+  - `GET /prayers/:id/history` - Retrieve prayer edit history with actor names
+  - Async history logging on prayer mutations (create, edit, delete, share, answer)
+  - Action type detection (answered vs edited vs shared)
+- **Subject Edit Authorization** (Phase 2)
+  - Linked prayer subjects can now edit and delete prayers about them
+  - Subject field protection (403 when attempting to change `prayer_subject_id`)
+- **Notification System** (Phase 3)
+  - `NotifyCircleOfPrayerShared` - Notifications to circle members on prayer share
+  - `NotifySubjectOfPrayerCreated` - Notifications to linked subjects on prayer creation
+  - `NotifyCreatorOfSubjectEdit` - Notifications when subject edits prayer, with 15-minute debounce
+  - Notification muting per group (`mute_notifications` on `user_group`)
+  - Notification target fields (`target_prayer_id`, `target_group_id`) for deep linking
+  - Database notification records created alongside push notifications
+
+### Fixed
+
+- Stale `link_status` values on `prayer_subject` records (migration 017)
+- NULL `mute_notifications` values backfilled on existing `user_group` records
+- Notification timestamps converted from TIMESTAMP to TIMESTAMPTZ for timezone correctness
+
+### Database
+
+- `016_create_prayer_edit_history.sql` - Prayer audit log table with action types
+- `017_fix_stale_link_status.sql` - Fixed prayer_subject link_status values
+- `018_notification_infrastructure.sql` - Added `mute_notifications` to `user_group`, created `notification_debounce` table
+- `019_fix_notification_nulls_and_timestamps.sql` - Backfilled NULLs, converted to TIMESTAMPTZ
+- `020_add_notification_targets.sql` - Added `target_prayer_id` and `target_group_id` to notification table
+- `021_backfill_notification_targets.sql` - Populated `target_group_id` for existing notifications
+
 ## [2025.12.1] - 2025-12-18
 
 ### Added
@@ -129,12 +203,32 @@ and this project uses a date-based versioning scheme: `[year].[month].[sequence]
 
 ## Version History
 
-- **2025.11.3** - Current release with delete account and reordering
+- **2026.2.1** - Comments, analytics, group enhancements (v1.1 Community & Interaction)
+- **2026.1.1** - Edit history, subject authorization, notifications (v1.0 Prayer Subject Editing)
+- **2025.12.1** - Group activity notifications
+- **2025.11.3** - Delete account and reordering
 - **0.0.1** - Initial MVP release
 
 ---
 
 ## Migration Notes
+
+### Upgrading to 2026.2.1 from 2026.1.1
+
+- Run migrations 022-024 in order:
+  - `022_add_phone_email_to_prayer_subject.sql`
+  - `023_add_prayer_comment.sql`
+  - `024_add_prayer_subject_id_to_group_profile.sql`
+
+### Upgrading to 2026.1.1 from 2025.12.1
+
+- Run migrations 016-021 in order:
+  - `016_create_prayer_edit_history.sql`
+  - `017_fix_stale_link_status.sql`
+  - `018_notification_infrastructure.sql`
+  - `019_fix_notification_nulls_and_timestamps.sql`
+  - `020_add_notification_targets.sql`
+  - `021_backfill_notification_targets.sql`
 
 ### Upgrading to 2025.11.3 from 0.0.1
 
