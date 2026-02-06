@@ -82,6 +82,8 @@ func main() {
 		// notification routes
 		auth.GET("/users/:user_profile_id/notifications", controllers.GetUserNotifications)
 		auth.PATCH("/users/:user_profile_id/notifications/:notification_id", controllers.ToggleUserNotificationStatus)
+		auth.DELETE("/users/:user_profile_id/notifications/:notification_id", controllers.DeleteUserNotification)
+		auth.PATCH("/users/:user_profile_id/notifications/mark-all-read", controllers.MarkAllNotificationsAsRead)
 
 		// group routes
 		auth.GET("/groups", controllers.GetAllGroups)
@@ -109,8 +111,22 @@ func main() {
 		// prayer routes
 		auth.PUT("/prayers/:prayer_id", controllers.UpdatePrayer)
 		auth.DELETE("/prayers/:prayer_id", controllers.DeletePrayer)
+		auth.GET("/prayers/:prayer_id/access", controllers.GetPrayerAccessRecords)
 		auth.POST("/prayers/:prayer_id/access", controllers.AddPrayerAccess)
 		auth.DELETE("/prayers/:prayer_id/access/:prayer_access_id", controllers.RemovePrayerAccess)
+		auth.GET("/prayers/:prayer_id/history", controllers.GetPrayerHistory)
+
+		// comment routes (under prayer resources)
+		auth.GET("/prayers/:prayer_id/comments", controllers.GetPrayerComments)
+		auth.POST("/prayers/:prayer_id/comments", controllers.CreateComment)
+		auth.PUT("/prayers/:prayer_id/comments/:comment_id", controllers.UpdateComment)
+		auth.DELETE("/prayers/:prayer_id/comments/:comment_id", controllers.DeleteComment)
+		auth.PATCH("/prayers/:prayer_id/comments/:comment_id/hide", controllers.HideComment)
+		auth.PATCH("/prayers/:prayer_id/comments/:comment_id/privacy", controllers.ToggleCommentPrivacy)
+
+		// prayer analytics routes
+		auth.POST("/prayers/:prayer_id/analytics", controllers.RecordPrayer)
+		auth.GET("/prayers/:prayer_id/analytics", controllers.GetPrayerAnalytics)
 
 		// prayer subject routes (resource-level operations)
 		auth.PATCH("/prayer-subjects/:prayer_subject_id", controllers.UpdatePrayerSubject)

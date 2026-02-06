@@ -12,6 +12,7 @@ type GroupProfile struct {
 	Created_By             int       `json:"createdBy"`
 	Updated_By             int       `json:"updatedBy"`
 	Deleted                bool      `json:"deleted" goqu:"skipinsert"`
+	Prayer_Subject_ID      *int      `json:"prayerSubjectId" db:"prayer_subject_id" goqu:"skipinsert,skipupdate"`
 	Group_Display_Sequence int       `json:"groupDisplaySequence" db:"group_display_sequence" goqu:"skipinsert,skipupdate"`
 }
 
