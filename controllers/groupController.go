@@ -80,6 +80,29 @@ func CreateGroup(c *gin.Context) {
 		return
 	}
 
+	// Auto-create contact card (prayer_subject) for the new group
+	// This allows group members to create "group prayers" for the circle itself
+	prayerSubject := models.PrayerSubject{
+		Prayer_Subject_Type:         "group",
+		Prayer_Subject_Display_Name: newGroup.Group_Name,
+		Display_Sequence:            0, // Will be sorted with other contacts
+		Link_Status:                 "unlinked",
+		Created_By:                  user.User_Profile_ID,
+		Updated_By:                  user.User_Profile_ID,
+	}
+
+	subjectInsert := initializers.DB.Insert("prayer_subject").Rows(prayerSubject).Returning("prayer_subject_id")
+
+	var insertedSubjectID int
+	_, err = subjectInsert.Executor().ScanVal(&insertedSubjectID)
+	if err != nil {
+		log.Printf("Failed to create contact card for group: %v", err)
+		// Non-fatal - group creation still succeeded
+	} else {
+		log.Printf("Created contact card (prayer_subject_id=%d) for group %s (group_profile_id=%d)",
+			insertedSubjectID, newGroup.Group_Name, group.Group_Profile_ID)
+	}
+
 	c.JSON(http.StatusCreated, group)
 }
 
